@@ -36,24 +36,21 @@ sub parse_cue($) {
 	    $r->{$t}->{discid_time} = hex($3);
 	    $r->{$t}->{discid_tracks} = hex($4);
 	} elsif (/^\s*index\s+(\d+)\s+0*(\d+):0*(\d+):0*(\d+)\s*$/i) {
-	    $r->{$t}->{"index$1"} = {m=>$2, s=>$3, f=>$4};
-	    die "invalid number of seconds for track"
-		    ." $r->{$t}->{track}: $_"
-		if $r->{$t}->{"index$1"}->{s} > 59;
-	    die "invalid number of frames for track"
-		    ." $r->{$t}->{track}: $_"
-		if $r->{$t}->{"index$1"}->{f} > 74;
+	    my ($i, $m, $s, $f) = ($1, $2, $3, $4);
+	    $r->{$t}->{"index$i"} = {m=>$m, s=>$s, f=>$f};
+	    die "invalid number of seconds for track $t: $_"
+		if $s > 59;
+	    die "invalid number of frames for track $t: $_"
+		if $f > 74;
 	    # Audio CDs supply position in the MSF format, i.e.
 	    # minutes:seconds.frame_no, with each frame holding
 	    # 13 and 1/3 milliseconds of audio data (there are
 	    # 75 frames per second). In order to pass these
 	    # positions to ffmpeg's -ss and -to parameters, we
 	    # need to convert them to milliseconds and round up.
-	    $r->{$t}->{"index$1"}->{ms} = 1000.0
-		* $r->{$t}->{"index$1"}->{f} / 75;
+	    $r->{$t}->{"index$i"}->{ms} = 1000.0 * $f / 75;
 	    use integer;
-	    $r->{$t}->{"index$1"}->{ms_ceil} = (1000
-		* $r->{$t}->{"index$1"}->{f} + 74) / 75;
+	    $r->{$t}->{"index$i"}->{ms_ceil} = (1000 * $f + 74) / 75;
 	} elsif (/^\s*track\s+(0*(\d+))\s+([^\r\n]*\S)\s*$/i) {
 	    $t = $2;
 	    if (not exists $r->{$t}) {
