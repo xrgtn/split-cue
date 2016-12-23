@@ -52,7 +52,7 @@ sub parse_cue($) {
 	    use integer;
 	    $r->{$t}->{"index$1"}->{ms_ceil} = (1000
 		* $r->{$t}->{"index$1"}->{f} + 74) / 75;
-	} elsif (/^\s*track\s+(0*(\d+))\s+([^\r\n]+)\s*$/i) {
+	} elsif (/^\s*track\s+(0*(\d+))\s+([^\r\n]*\S)\s*$/i) {
 	    $t = $2;
 	    if (not exists $r->{$t}) {
 		# add new track number to total and max:
