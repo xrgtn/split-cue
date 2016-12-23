@@ -21,19 +21,19 @@ sub parse_cue($) {
     while (<$fd>) {
 	if (/^\s*title\s+"(.*)"\s*$/i) {
 	    $r->{$t}->{title} = $1;
-	} elsif (/\s*performer\s+"(.*)"\s*$/i) {
+	} elsif (/^\s*performer\s+"(.*)"\s*$/i) {
 	    $r->{$t}->{performer} = $1;
-	} elsif (/\s*rem\s+date\s+(\d+)\s*$/i) {
+	} elsif (/^\s*rem\s+date\s+(\d+)\s*$/i) {
 	    $r->{$t}->{year} = $1;
-	} elsif (/\s*rem\s+genre\s+([^\r\n]+)\s*$/i) {
+	} elsif (/^\s*rem\s+genre\s+([^\r\n]+)\s*$/i) {
 	    $r->{$t}->{genre} = $1;
-	} elsif (/\s*discid\s+(([0-9A-F]{2})([0-9A-F]{4})
+	} elsif (/^\s*rem\s+discid\s+(([0-9A-F]{2})([0-9A-F]{4})
 	([0-9A-F]{2}))\s*$/ix) {
 	    $r->{$t}->{discid} = $1;
 	    $r->{$t}->{discid_cksum} = hex($2);
 	    $r->{$t}->{discid_time} = hex($3);
 	    $r->{$t}->{discid_tracks} = hex($4);
-	} elsif (/\s*index\s+(\d+)\s+0*(\d+):0*(\d+):0*(\d+)\s*$/i) {
+	} elsif (/^\s*index\s+(\d+)\s+0*(\d+):0*(\d+):0*(\d+)\s*$/i) {
 	    $r->{$t}->{"index$1"} = {m=>$2, s=>$3, f=>$4};
 	    die "invalid number of seconds for track"
 		    ." $r->{$t}->{track}: $_"
@@ -52,7 +52,7 @@ sub parse_cue($) {
 	    use integer;
 	    $r->{$t}->{"index$1"}->{ms_ceil} = (1000
 		* $r->{$t}->{"index$1"}->{f} + 74) / 75;
-	} elsif (/\s*track\s+(0*(\d+))\s+([^\r\n]+)\s*$/i) {
+	} elsif (/^\s*track\s+(0*(\d+))\s+([^\r\n]+)\s*$/i) {
 	    $t = $2;
 	    if (not exists $r->{$t}) {
 		# add new track number to total and max:
