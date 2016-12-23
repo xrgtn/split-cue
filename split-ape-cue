@@ -25,7 +25,7 @@ sub parse_cue($) {
 	    $r->{$t}->{performer} = $1;
 	} elsif (/^\s*rem\s+date\s+(\d+)\s*$/i) {
 	    $r->{$t}->{year} = $1;
-	} elsif (/^\s*rem\s+genre\s+([^\r\n]+)\s*$/i) {
+	} elsif (/^\s*rem\s+genre\s+"(.*)"\s*$/i) {
 	    $r->{$t}->{genre} = $1;
 	} elsif (/^\s*rem\s+discid\s+(([0-9A-F]{2})([0-9A-F]{4})
 	([0-9A-F]{2}))\s*$/ix) {
