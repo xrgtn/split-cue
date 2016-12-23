@@ -20,7 +20,9 @@ sub parse_cue($) {
     my $t = "disc";
     while (<$fd>) {
 	if (/^\s*title\s+"(.*)"\s*$/i) {
-	    $r->{$t}->{title} = $1;
+	    my $title = $1;
+	    $r->{$t}->{title} = $title
+		if $title !~ /^\s*track\s*\d+\s*$/i;
 	} elsif (/^\s*performer\s+"(.*)"\s*$/i) {
 	    $r->{$t}->{performer} = $1;
 	} elsif (/^\s*rem\s+date\s+(\d+)\s*$/i) {
