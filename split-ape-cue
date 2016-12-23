@@ -27,6 +27,12 @@ sub parse_cue($) {
 	    $r->{$t}->{year} = $1;
 	} elsif (/\s*rem\s+genre\s+([^\r\n]+)\s*$/i) {
 	    $r->{$t}->{genre} = $1;
+	} elsif (/\s*discid\s+(([0-9A-F]{2})([0-9A-F]{4})
+	([0-9A-F]{2}))\s*$/ix) {
+	    $r->{$t}->{discid} = $1;
+	    $r->{$t}->{discid_cksum} = hex($2);
+	    $r->{$t}->{discid_time} = hex($3);
+	    $r->{$t}->{discid_tracks} = hex($4);
 	} elsif (/\s*index\s+(\d+)\s+0*(\d+):0*(\d+):0*(\d+)\s*$/i) {
 	    $r->{$t}->{"index$1"} = {m=>$2, s=>$3, f=>$4};
 	    die "invalid number of seconds for track"
