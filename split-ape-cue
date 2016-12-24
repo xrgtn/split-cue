@@ -299,6 +299,20 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    split_track_performer_title($dinfo);
 	    print_disc_info($dinfo, 1);
 	};
+	# pass dinfo data to $c:
+	$c->{disc}->{performer} = $dinfo->{_performer};
+	$c->{disc}->{title} = $dinfo->{_title};
+	$c->{disc}->{year} = $dinfo->{dyear};
+	$c->{disc}->{genre} = $dinfo->{dgenre};
+	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
+	    my $_track = $dinfo->{_tracks}->[$i];
+	    $c->{$i + 1}->{title} = $_track->{_title};
+	    if (defined $_track->{_performer}) {
+		$c->{$i + 1}->{performer} = $_track->{_performer};
+	    } else {
+		undef $c->{$i + 1}->{performer};
+	    };
+	};
     };
 };
 
