@@ -61,6 +61,7 @@ sub parse_cue($) {
 	    $r->{$t}->{$i}->{offs} = ($m * 60 + $s) * 75 + $f;
 	} elsif (/^\s*track\s+(0*(\d+))\s+([^\r\n]*\S)\s*$/i) {
 	    $t = $2;
+	    die "invalid track number - $t\n" if $t == 0;
 	    if (not exists $r->{$t}) {
 		# add new track number to total and max:
 		if (not exists $r->{disc}->{tracks}) {
@@ -73,7 +74,7 @@ sub parse_cue($) {
 			or $t > $r->{disc}->{maxtrack};
 	    };
 	    $r->{$t}->{track} = $1;
-	    $r->{$t}->{type} = $3;
+	    $r->{$t}->{type} = lc($3);
 	} elsif (/^\s*flags\s+([^\r\n]*\S)\s*$/i) {
 	    # XXX ignore
 	} else {
@@ -81,11 +82,18 @@ sub parse_cue($) {
 	};
     };
     close $cue_fd;
+    die "no tracks found in $cue_fname\n"
+	if not exists $r->{disc}->{maxtrack};
+    die "max track no != num,ber of tracks\n"
+	if $r->{disc}->{maxtrack} != $r->{disc}->{tracks};
     # find tracks without title/performer:
     foreach $t (grep {$_ ne "disc"} keys %$r) {
-	if (not exists $r->{$t}->{title}
-	or not exists $r->{$t}->{performer}
-	and not exists $r->{disc}->{performer}) {
+	die "no index01 defined for track $t\n"
+	    if not exists $r->{$t}->{index01};
+	if ($r->{$t}->{type} eq "audio"
+	and (not exists $r->{$t}->{title}
+	    or not exists $r->{$t}->{performer}
+	    and not exists $r->{disc}->{performer})) {
 	    $r->{disc}->{untitled_tracks}->{$t} = 1;
 	};
     };
@@ -171,7 +179,7 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    printf "%3i. %s: %s %s\n", $n + 1, $dbid,
 		join(" ", @{$dinfo->{offsets}}), $dinfo->{dlength};
 	    print "     $dbgenre, \"$dbtitle\"\n";
-	    #print Data::Dumper->Dump([$disc_info]);
+	    # print Data::Dumper->Dump([$dinfo]);
 	};
     };
 };
