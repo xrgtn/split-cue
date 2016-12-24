@@ -15,10 +15,12 @@ use Data::Dumper;
 #   ...
 # }
 sub parse_cue($) {
-    my ($fd) = @_;
+    my ($cue_fname) = @_;
+    open (my $cue_fd, "<", $cue_fname)
+	or die "cannot open $cue_fname - $!\n";
     my $r;
     my $t = "disc";
-    while (<$fd>) {
+    while (<$cue_fd>) {
 	if (/^\s*title\s+"(.*)"\s*$/i) {
 	    my $title = $1;
 	    $r->{$t}->{title} = $title
@@ -76,6 +78,7 @@ sub parse_cue($) {
 	    warn "unrecognized .cue line: $_";
 	};
     };
+    close $cue_fd;
     # find tracks without title/performer:
     foreach $t (grep {$_ ne "disc"} keys %$r) {
 	if (not exists $r->{$t}->{title}
@@ -93,11 +96,8 @@ foreach my $f (@ARGV) {
     foreach my $fname ($ape_fname, $cue_fname) {
 	die "$fname doesn't exist\n" if not -e $fname;
     };
-    open (my $cue_fd, "<", $cue_fname)
-	or die "cannot open $cue_fname - $!\n";
-    my $c = parse_cue($cue_fd);
+    my $c = parse_cue($cue_fname);
     print Data::Dumper->Dump([$c]);
-    close $cue_fd;
 };
 
 # vi:set sw=4 noet ts=8 tw=71:
