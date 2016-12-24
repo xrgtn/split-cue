@@ -115,8 +115,9 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    if defined $@ and $@ ne "";
 	my $cddb = new CDDB(
 	    Host  => 'freedb.freedb.org',
-	    Login => 'anonymous',
-	) or die "Error connecting to freedb - $!\n";
+	    Login => 'nobody',
+	) or die "Cannot init CDDB - $!\n";
+	$cddb->{hostname} = "localhost";
 	use integer;
 	# XXX: track01 typically starts at 2 sec (150 frames) offset:
 	@{$c->{disc}->{track_offsets}} =
@@ -167,7 +168,7 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
 	    $dinfo->{dlength} = $1
 		if $dinfo->{"disc length"} =~ /(\d+)/;
-	    printf "%3i. %s: %s %s\n", $n, $dbid,
+	    printf "%3i. %s: %s %s\n", $n + 1, $dbid,
 		join(" ", @{$dinfo->{offsets}}), $dinfo->{dlength};
 	    print "     $dbgenre, \"$dbtitle\"\n";
 	    #print Data::Dumper->Dump([$disc_info]);
