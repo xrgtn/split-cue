@@ -43,7 +43,9 @@ sub parse_cue($) {
 	    $r->{$t}->{discid_tracks} = hex($4);
 	} elsif (/^\s*index\s+(\d+)\s+0*(\d+):0*(\d+):0*(\d+)\s*$/i) {
 	    my ($i, $m, $s, $f) = ("index$1", $2, $3, $4);
-	    $r->{$t}->{$i} = {m=>$m, s=>$s, f=>$f};
+	    use integer;
+	    $r->{$t}->{$i} = {h=>$m / 60, m=>$m % 60, s=>$s, f=>$f};
+	    no integer;
 	    die "invalid number of seconds for track $t: $_"
 		if $s > 59;
 	    die "invalid number of frames for track $t: $_"
