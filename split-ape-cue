@@ -74,6 +74,8 @@ sub parse_cue($) {
 	    };
 	    $r->{$t}->{track} = $1;
 	    $r->{$t}->{type} = $3;
+	} elsif (/^\s*flags\s+([^\r\n]*\S)\s*$/i) {
+	    # XXX ignore
 	} else {
 	    warn "unrecognized .cue line: $_";
 	};
@@ -90,6 +92,89 @@ sub parse_cue($) {
     return $r;
 };
 
+sub sum_digits_base_n($$) {
+    my ($x, $base) = @_;
+    my $s = 0;
+    use integer;
+    while ($x > 0) {
+	$s = $s + ($x % $base);
+	$x = $x / $base;
+    };
+    return $s;
+};
+
+sub get_missing_data_from_cddb_or_ape($$) {
+    my ($c, $ape_fname) = @_;
+    if (exists $c->{disc}->{untitled_tracks} or 1) {
+	# Load CDDB.pm library at runtime:
+	eval {
+	    require CDDB;
+	    import  CDDB;
+	};
+	die "Perl CDDB module is missing\n"
+	    if defined $@ and $@ ne "";
+	my $cddb = new CDDB(
+	    Host  => 'freedb.freedb.org',
+	    Login => 'anonymous',
+	) or die "Error connecting to freedb - $!\n";
+	use integer;
+	# XXX: track01 typically starts at 2 sec (150 frames) offset:
+	@{$c->{disc}->{track_offsets}} =
+	    map {150 + $c->{$_}->{index01}->{offs}}
+	    sort {$a <=> $b} grep {$_ ne "disc"} keys %$c;
+	$c->{disc}->{offsum} = 0;
+	$c->{disc}->{offsum} += sum_digits_base_n($_ / 75, 10)
+	    foreach @{$c->{disc}->{track_offsets}};
+	no integer;
+	# detect total play time of the disc:
+	if (not exists $c->{disc}->{discid_time} or 1) {
+	    # fork child ffmpeg process:
+	    my $ffmpeg_pid = open my $ffmpeg_out, "-|";
+	    die "cannot fork: $!" if not defined $ffmpeg_pid;
+	    if ($ffmpeg_pid == 0) {
+		# child
+		open STDERR, ">&STDOUT"
+		    or die "Cannot redirect STDERR to STDOUT: $!";
+		exec {"ffmpeg"} ("ffmpeg", "-i", $ape_fname)
+		    or die "Cannot execute ffmpeg: $!";
+	    } else {
+		# parent
+		while (<$ffmpeg_out>) {
+		    #  Duration: 00:46:25.43, start: 0.000000, ...
+		    if (/^\s*Duration:\s*(\d\d):(\d\d):(\d\d)
+		    \.\d+,/ix) {
+			$c->{disc}->{ape_time} =
+			    ($1 * 60 + $2) * 60 + $3;
+		    }
+		};
+		close $ffmpeg_out;
+	    };
+	};
+	$c->{disc}->{discid2} = sprintf "%02x%04x%02x",
+	    $c->{disc}->{offsum} % 255,
+	    $c->{disc}->{ape_time},
+	    $c->{disc}->{tracks};
+	print "get  $c->{disc}->{discid2}: ".join(" ",
+	    @{$c->{disc}->{track_offsets}})
+	    ." $c->{disc}->{ape_time}\n";
+	my @discs = $cddb->get_discs(
+	    $c->{disc}->{discid2},
+	    $c->{disc}->{track_offsets},
+	    $c->{disc}->{ape_time}
+	);
+	for (my $n = 0; $n < scalar(@discs); $n++) {
+	    my ($dbgenre, $dbid, $dbtitle) = @{$discs[$n]};
+	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
+	    $dinfo->{dlength} = $1
+		if $dinfo->{"disc length"} =~ /(\d+)/;
+	    printf "%3i. %s: %s %s\n", $n, $dbid,
+		join(" ", @{$dinfo->{offsets}}), $dinfo->{dlength};
+	    print "     $dbgenre, \"$dbtitle\"\n";
+	    #print Data::Dumper->Dump([$disc_info]);
+	};
+    };
+};
+
 foreach my $f (@ARGV) {
     die "invalid filename - $f\n" if not $f =~ /\A(.*)\.(ape|cue)\z/i;
     my ($ape_fname, $cue_fname) = ("$1.ape", "$1.cue");
@@ -97,7 +182,7 @@ foreach my $f (@ARGV) {
 	die "$fname doesn't exist\n" if not -e $fname;
     };
     my $c = parse_cue($cue_fname);
-    print Data::Dumper->Dump([$c]);
+    get_missing_data_from_cddb_or_ape($c, $ape_fname);
 };
 
 # vi:set sw=4 noet ts=8 tw=71:
