@@ -174,8 +174,12 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	for (my $n = 0; $n < scalar(@discs); $n++) {
 	    my ($dbgenre, $dbid, $dbtitle) = @{$discs[$n]};
 	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
-	    $dinfo->{dlength} = $1
-		if $dinfo->{"disc length"} =~ /(\d+)/;
+	    if ($dinfo->{"disc length"} =~ /(\d+)/) {
+		$dinfo->{dlength} = $1;
+	    } else {
+		die "invalid disc length - "
+		    .$dinfo->{"disc length"}."\n";
+	    };
 	    printf "%3i. %s: %s %s\n", $n + 1, $dbid,
 		join(" ", @{$dinfo->{offsets}}), $dinfo->{dlength};
 	    print "     $dbgenre, \"$dbtitle\"\n";
