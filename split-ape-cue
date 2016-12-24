@@ -172,7 +172,7 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    $c->{disc}->{ape_time}
 	);
 	for (my $n = 0; $n < scalar(@discs); $n++) {
-	    my ($dbgenre, $dbid, $dbtitle) = @{$discs[$n]};
+	    my ($dbgenre, $dbid, $dbperformertitle) = @{$discs[$n]};
 	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
 	    if ($dinfo->{"disc length"} =~ /(\d+)/) {
 		$dinfo->{dlength} = $1;
@@ -180,9 +180,16 @@ sub get_missing_data_from_cddb_or_ape($$) {
 		die "invalid disc length - "
 		    .$dinfo->{"disc length"}."\n";
 	    };
+	    my ($dbperformer, $dbtitle);
+	    if ($dbperformertitle =~ m{^(.*) / (.*)$}) {
+		($dbperformer, $dbtitle) = ($1, $2);
+	    } else {
+		die "invalid disc performer/title - "
+		    .$dbperformertitle."\n"
+	    };
 	    printf "%3i. %s: %s %s\n", $n + 1, $dbid,
 		join(" ", @{$dinfo->{offsets}}), $dinfo->{dlength};
-	    print "     $dbgenre, \"$dbtitle\"\n";
+	    print "     $dbgenre, $dbperformer - $dbtitle\n";
 	    # print Data::Dumper->Dump([$dinfo]);
 	};
     };
