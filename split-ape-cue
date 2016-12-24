@@ -292,9 +292,11 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	# edit the disc info if requested by user:
 	printf "Do you want to edit the disc info? (y/n) [n]: ";
 	my $choice = get_choice_or_exit();
-	edit_disc_info($dinfo) if $choice eq "y";
-	split_track_performer_title($dinfo);
-	print_disc_info($dinfo, 1);
+	if ($choice eq "y") {
+	    edit_disc_info($dinfo);
+	    split_track_performer_title($dinfo);
+	    print_disc_info($dinfo, 1);
+	};
     };
 };
 
