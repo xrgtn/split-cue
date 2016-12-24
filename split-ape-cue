@@ -171,27 +171,52 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    $c->{disc}->{track_offsets},
 	    $c->{disc}->{ape_time}
 	);
-	for (my $n = 0; $n < scalar(@discs); $n++) {
-	    my ($dbgenre, $dbid, $dbperformertitle) = @{$discs[$n]};
-	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
+	my ($n, $dinfo, @dinfos) = (0);
+	foreach my $disc (@discs) {
+	    my ($dbgenre, $dbid, $dbperformertitle) = @$disc;
+	    $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
 	    if ($dinfo->{"disc length"} =~ /(\d+)/) {
 		$dinfo->{dlength} = $1;
 	    } else {
 		die "invalid disc length - "
 		    .$dinfo->{"disc length"}."\n";
 	    };
-	    my ($dbperformer, $dbtitle);
 	    if ($dbperformertitle =~ m{^(.*) / (.*)$}) {
-		($dbperformer, $dbtitle) = ($1, $2);
+		($dinfo->{performer}, $dinfo->{title}) = ($1, $2);
 	    } else {
 		die "invalid disc performer/title - "
 		    .$dbperformertitle."\n"
 	    };
 	    printf "%3i. %s: %s %s\n", $n + 1, $dbid,
 		join(" ", @{$dinfo->{offsets}}), $dinfo->{dlength};
-	    print "     $dbgenre, $dbperformer - $dbtitle\n";
-	    # print Data::Dumper->Dump([$dinfo]);
+	    print "     $dbgenre, $dinfo->{performer} - "
+		."$dinfo->{title}\n";
+	    $dinfos[$n++] = $dinfo;
+	    #print Data::Dumper->Dump([$dinfo]);
 	};
+	my $chosen_dinfo_no = 0;
+	if (scalar(@dinfos) > 1) {
+	    my $oldsel = select(STDOUT); $| = 1; select($oldsel);
+	    printf "Select a disc data (1-%i) [1]: ",
+		scalar(@dinfos);
+	    my $choice = <STDIN>;
+	    if (not defined $choice) {
+		# EOF / Ctrl-D
+		print "\n";
+		exit 1;
+	    };
+	    chomp $choice;
+	    if ($choice =~ /^\d+$/ and $choice >= 1
+	    and $choice <= scalar(@dinfos)) {
+		$chosen_dinfo_no = $choice - 1;
+	    } elsif ($choice ne "") {
+		die "invalid disc data number - $choice\n";
+	    };
+	};
+	$dinfo = $dinfos[$chosen_dinfo_no];
+	printf "Selected %i. %s: %s, %04i - %s - %s\n",
+	    $chosen_dinfo_no + 1, $dinfo->{discid}, $dinfo->{dgenre},
+	    $dinfo->{dyear}, $dinfo->{performer}, $dinfo->{title};
     };
 };
 
