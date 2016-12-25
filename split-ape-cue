@@ -2,7 +2,35 @@
 
 use strict;
 use warnings;
+use Encode qw(decode encode);
 use Data::Dumper;
+
+sub get_loc_charenc() {
+    my $charenc;
+    # the simplest way: trailing charmap in LANG/etc:
+    foreach my $k (qw(LC_ALL LC_CTYPE LANG)) {
+	return $2
+	    if defined $ENV{$k} and $ENV{$k} =~ /^([^.]+)\.(.*)$/;
+    };
+    # nl_langinfo (3)      - query language and locale information,
+    # its perl counterpart is implemented as I18N::Langinfo:
+    eval {
+	require I18N::Langinfo;
+	import  I18N::Langinfo;
+	$charenc = I18N::Langinfo::langinfo(
+	    I18N::Langinfo::CODESET());
+    };
+    return $charenc if defined $charenc and $charenc ne "";
+    # try executing `locale charmap`:
+    eval {$charenc = `locale charmap`};
+    chomp $charenc if defined $charenc;
+    return $charenc if defined $charenc and $charenc ne "";
+    # assume utf8 by default:
+    return "utf8";
+};
+
+# XXX : $loc_charenc is a global variable.
+my $loc_charenc = get_loc_charenc();
 
 # Parse .cue contents from the given file descriptor.
 # Returns hash:
@@ -21,6 +49,7 @@ sub parse_cue($) {
     my $r;
     my $t = "disc";
     while (<$cue_fd>) {
+	$_ = decode($loc_charenc, $_);
 	if (/^\s*title\s+"(.*)"\s*$/i) {
 	    my $title = $1;
 	    $r->{$t}->{title} = $title
@@ -120,6 +149,7 @@ sub get_choice_or_exit() {
 	print "\n";
 	exit 1;
     };
+    $choice = decode($loc_charenc, $choice);
     chomp $choice;
     return $choice;
 };
@@ -142,29 +172,33 @@ sub validate_disc_info($) {
 
 sub edit_disc_info($) {
     my ($dinfo) = @_;
-    printf "Disc genre [%s]: ", $dinfo->{dgenre};
+    printf "Disc genre [%s]: ",
+	encode($loc_charenc, $dinfo->{dgenre});
     my $choice = get_choice_or_exit();
     $dinfo->{genre} = $choice if $choice ne "";
-    printf "Disc year [%s]: ", $dinfo->{dyear};
+    printf "Disc year [%s]: ",
+	encode($loc_charenc, $dinfo->{dyear});
     $choice = get_choice_or_exit();
     if ($choice =~ /^\d{4}$/) {
 	$dinfo->{year} = $choice;
     } elsif ($choice ne "") {
 	die "invalid year - $choice\n";
     };
-    printf "Disc performer [%s]: ", $dinfo->{_performer};
+    printf "Disc performer [%s]: ",
+	encode($loc_charenc, $dinfo->{_performer});
     $choice = get_choice_or_exit();
     $dinfo->{_performer} = $choice if $choice ne "";
-    printf "Disc title [%s]: ", $dinfo->{_title};
+    printf "Disc title [%s]: ",
+	encode($loc_charenc, $dinfo->{_title});
     $choice = get_choice_or_exit();
     $dinfo->{_title} = $choice if $choice ne "";
     for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
 	if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
-	    printf "Track %02i performer / title [%s]: ",
-		$i + 1, $dinfo->{ttitles}->[$i];
+	    printf "Track %02i performer / title [%s]: ", $i + 1,
+		encode($loc_charenc, $dinfo->{ttitles}->[$i]);
 	} else {
-	    printf "Track %02i title [%s]: ",
-		$i + 1, $dinfo->{ttitles}->[$i];
+	    printf "Track %02i title [%s]: ", $i + 1,
+		encode($loc_charenc, $dinfo->{ttitles}->[$i]);
 	};
 	$choice = get_choice_or_exit();
 	$dinfo->{ttitles}->[$i] = $choice if $choice ne "";
@@ -187,16 +221,22 @@ sub split_track_performer_title($) {
 sub print_disc_info($;$$) {
     my ($dinfo, $print_tracks, $dbgenre) = @_;
     printf "%3i. %s: %s, %04i - %s - %s\n",
-	$dinfo->{_disc_no} + 1, $dinfo->{discid},
-	(defined($dbgenre) ? $dbgenre : $dinfo->{dgenre}),
-	$dinfo->{dyear}, $dinfo->{_performer}, $dinfo->{_title};
+	$dinfo->{_disc_no} + 1,
+	$dinfo->{discid},
+	encode($loc_charenc, defined($dbgenre) ? $dbgenre
+	    : $dinfo->{dgenre}),
+	$dinfo->{dyear},
+	encode($loc_charenc, $dinfo->{_performer}),
+	encode($loc_charenc, $dinfo->{_title});
     if ($print_tracks) {
 	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
 	    printf "    %02i. %s - %s\n", $i + 1,
-		((defined $dinfo->{_tracks}->[$i]->{_performer}) ?
+		encode($loc_charenc,
+		    defined $dinfo->{_tracks}->[$i]->{_performer} ?
 		    $dinfo->{_tracks}->[$i]->{_performer}
-		    : $dinfo->{_performer}
-		), $dinfo->{_tracks}->[$i]->{_title};
+		    : $dinfo->{_performer}),
+		encode($loc_charenc,
+		    $dinfo->{_tracks}->[$i]->{_title});
 	};
     };
 };
@@ -317,7 +357,9 @@ sub get_missing_data_from_cddb_or_ape($$) {
 };
 
 foreach my $f (@ARGV) {
-    die "invalid filename - $f\n" if not $f =~ /\A(.*)\.(ape|cue)\z/i;
+    $f = decode($loc_charenc, $f);
+    die "invalid filename - $f\n"
+	if not $f =~ /\A(.*)\.(ape|cue)\z/i;
     my ($ape_fname, $cue_fname) = ("$1.ape", "$1.cue");
     foreach my $fname ($ape_fname, $cue_fname) {
 	die "$fname doesn't exist\n" if not -e $fname;
