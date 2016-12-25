@@ -433,8 +433,9 @@ sub encode_tracks($$$) {
 	} else {
 	    $track_base_ = $t02;
 	};
-	my ($track_wav_, $track_mp3_) = ("$track_base_.wav",
-	    "$track_base_.mp3");
+	my ($track_wav_, $track_mp3_) = (
+	    "$disc_dname_/$track_base_.wav",
+	    "$disc_dname_/$track_base_.mp3");
 	my @ffmpeg = ("ffmpeg", "-i", $ape_fname,
 	    "-ss", (sprintf "%02i:%02i:%02i.%03i",
 		$c->{$t}->{index01}->{h},
