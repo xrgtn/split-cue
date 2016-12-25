@@ -396,10 +396,10 @@ sub encode_tracks($$$) {
     foreach my $t (sort {$a <=> $b} grep {$_ ne "disc"
     and $c->{$_}->{type} eq "audio"} keys %$c) {
 	my $tperformer_ =
-	    defined $dinfo->{tracks}->{$t - 1}->{_performer} ?
-	    str($dinfo->{tracks}->{$t - 1}->{_performer}) :
+	    defined $dinfo->{_tracks}->{$t - 1}->{_performer} ?
+	    str($dinfo->{_tracks}->{$t - 1}->{_performer}) :
 	    $dperformer_;
-	my $ttitle_ = str $dinfo->{tracks}->{$t - 1}->{_title};
+	my $ttitle_ = str $dinfo->{_tracks}->{$t - 1}->{_title};
 	my $t02 = sprintf "%02i", $t;
 	my ($track_wav_, $track_mp3_) = (
 	    "$disc_dname_/$t02. $tperformer_ - $ttitle_.wav",
@@ -427,7 +427,7 @@ sub encode_tracks($$$) {
 	# push @ffmpeg, "-metadata", "artist=$tperformer_";
 	# push @ffmpeg, "-metadata", "title=$ttitle_";
 	# push @ffmpeg, "-metadata", "albumartist=$dperformer_"
-	#    if defined $dinfo->{tracks}->{$t - 1}->{_performer};
+	#    if defined $dinfo->{_tracks}->{$t - 1}->{_performer};
 	push @ffmpeg, ("-y", $track_wav_);
 	print join(" ", @ffmpeg)."\n";
 	my $r = system {$ffmpeg[0]} @ffmpeg;
@@ -441,7 +441,7 @@ sub encode_tracks($$$) {
 	    "--ta", $tperformer_,
 	    "--tt", $ttitle_,
 	);
-	if (defined $dinfo->{tracks}->{$t - 1}->{_performer}) {
+	if (defined $dinfo->{_tracks}->{$t - 1}->{_performer}) {
 	    push @lame, "--tv", "TPE2=$dperformer_";
 	} else {
 	    push @lame, "--id3v1-only";
