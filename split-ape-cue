@@ -87,6 +87,7 @@ sub parse_cue($) {
 	    # need to convert them to milliseconds and round up.
 	    $r->{$t}->{$i}->{ms} = 1000.0 * $f / 75;
 	    use integer;
+	    $r->{$t}->{$i}->{ms_floor} = 1000 * $f / 75;
 	    $r->{$t}->{$i}->{ms_ceil} = (1000 * $f + 74) / 75;
 	    # Track offset in frames:
 	    $r->{$t}->{$i}->{offs} = ($m * 60 + $s) * 75 + $f;
@@ -356,6 +357,76 @@ sub get_missing_data_from_cddb_or_ape($$) {
     };
 };
 
+sub encode_tracks($$) {
+    my ($c, $ape_fname) = @_;
+    my $dyear04 = sprintf "%04i", $c->{disc}->{year};
+    my $dperformer_ = encode($loc_charenc, $c->{disc}->{performer});
+    my $dtitle_ = encode($loc_charenc, $c->{disc}->{title});
+    my $dgenre_ = encode($loc_charenc, $c->{disc}->{genre});
+    my $disc_dname_ = "$dyear04 - $dperformer_ - $dtitle_";
+    if (not -d $disc_dname_) {
+	mkdir $disc_dname_ or die "cannot mkdir $disc_dname_ - $!";
+    };
+    foreach my $t (sort {$a <=> $b} grep {$_ ne "disc"
+    and $c->{$_}->{type} eq "audio"} keys %$c) {
+	my $tperformer_ = defined $c->{$t}->{performer} ?
+	    encode($loc_charenc, $c->{$t}->{performer})
+	    : $dperformer_;
+	my $ttitle_ = encode($loc_charenc, $c->{$t}->{title});
+	my $t02 = sprintf "%02i", $t;
+	my $track_wav_ = "$t02. $tperformer_ - $ttitle_.wav";
+	my $track_mp3_ = "$t02. $tperformer_ - $ttitle_.mp3";
+	my @ffmpeg = ("ffmpeg", "-i", $ape_fname,
+	    "-ss", (sprintf "%02i:%02i:%02i.%03i",
+		$c->{$t}->{index01}->{h},
+		$c->{$t}->{index01}->{m},
+		$c->{$t}->{index01}->{s},
+		$c->{$t}->{index01}->{ms_ceil}));
+	if (exists $c->{$t + 1}) {
+	    my $i = exists $c->{$t + 1}->{index00} ? "index00"
+		: "index01";
+	    push @ffmpeg, "-to";
+	    push @ffmpeg, (sprintf "%02i:%02i:%02i.%03i",
+		$c->{$t + 1}->{$i}->{h},
+		$c->{$t + 1}->{$i}->{m},
+		$c->{$t + 1}->{$i}->{s},
+		$c->{$t + 1}->{$i}->{ms_floor});
+	};
+	# push @ffmpeg, "-metadata", "date=$dyear04";
+	# push @ffmpeg, "-metadata", "album=$dtitle_";
+	# push @ffmpeg, "-metadata", "genre=$dgenre_";
+	# push @ffmpeg, "-metadata", "track=$t02";
+	# push @ffmpeg, "-metadata", "artist=$tperformer_";
+	# push @ffmpeg, "-metadata", "title=$ttitle_";
+	# push @ffmpeg, "-metadata", "albumartist=$dperformer_"
+	#    if defined $c->{$t}->{performer};
+	push @ffmpeg, ("-y", "$disc_dname_/$track_wav_");
+	print join(" ", @ffmpeg)."\n";
+	my $r = system {$ffmpeg[0]} @ffmpeg;
+	die "ffmpeg error - $!\n" if $r < 0;
+	die "ffmpeg error $?\n" if $r != 0;
+	my @lame = ("lame", "-V2",
+	    "--ty", $dyear04,
+	    "--tl", $dtitle_,
+	    "--tg", $dgenre_,
+	    "--tn", $t,
+	    "--ta", $tperformer_,
+	    "--tt", $ttitle_,
+	);
+	if (defined $c->{$t}->{performer}) {
+	    push @lame, "--tv", "TPE2=$dperformer_";
+	} else {
+	    push @lame, "--id3v1-only";
+	};
+	push @lame, "$disc_dname_/$track_wav_",
+	    "$disc_dname_/$track_mp3_";
+	print join(" ", @lame)."\n";
+	$r = system {$lame[0]} @lame;
+	die "lame error - $!\n" if $r < 0;
+	die "lame error $?\n" if $r != 0;
+    };
+};
+
 foreach my $f (@ARGV) {
     $f = decode($loc_charenc, $f);
     die "invalid filename - $f\n"
@@ -366,6 +437,7 @@ foreach my $f (@ARGV) {
     };
     my $c = parse_cue($cue_fname);
     get_missing_data_from_cddb_or_ape($c, $ape_fname);
+    encode_tracks($c, $ape_fname);
 };
 
 # vi:set sw=4 noet ts=8 tw=71:
