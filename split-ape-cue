@@ -409,8 +409,8 @@ sub encode_tracks($$$) {
     # generate meaningful disc_name_ even if year/title/performer isn't
     # defined:
     if (defined $dtitle_) {
-	$disc_dname_ = $dperformer_." - ".$disc_dname_
-	    if defined $dperformer_;
+	$disc_dname_ = (defined $dperformer_) ?
+	    $dperformer_." - ".$dtitle_ : $dtitle_;
 	$disc_dname_ = $dyear04." - ".$disc_dname_
 	    if defined $dyear04;
     } else {
