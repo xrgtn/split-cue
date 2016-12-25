@@ -328,7 +328,7 @@ sub get_missing_data_from_cddb_or_ape($$) {
 		die "invalid CDDB disc number - $choice\n";
 	    };
 	};
-	printf "Selected disc %i\n", $chosen_disc_no + 1;
+	printf "Selected disc %i:\n", $chosen_disc_no + 1;
 	$dinfo = $valid_discs[$chosen_disc_no];
 	print_disc_info($dinfo, 1);
 	# edit the disc info if requested by user:
