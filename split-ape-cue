@@ -222,11 +222,13 @@ sub get_choice_or_exit() {
     return $choice;
 };
 
+sub str_($) {
+    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : undef;
+};
+
 # Return $x converted to printable (locale-encoded) string.
 sub str($) {
-    my ($x) = @_;
-    return "???" if not defined $x;
-    return encode($loc_charenc, $x);
+    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : "???";
 };
 
 # Edit disc genre, year, performer, title and titles for all audio
@@ -289,14 +291,16 @@ sub edit_disc_info($$) {
 
 sub split_track_titles($) {
     my ($dinfo) = @_;
-    for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
-	if (defined $dinfo->{ttitles}->[$i]) {
-	    if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
-		$dinfo->{_tracks}->[$i]->{_performer} = $1;
-		$dinfo->{_tracks}->[$i]->{_title} = $2;
-	    } else {
-		$dinfo->{_tracks}->[$i]->{_title} =
-		    $dinfo->{ttitles}->[$i];
+    if (defined $dinfo->{ttitles}) {
+	for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
+	    if (defined $dinfo->{ttitles}->[$i]) {
+		if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
+		    $dinfo->{_tracks}->[$i]->{_performer} = $1;
+		    $dinfo->{_tracks}->[$i]->{_title} = $2;
+		} else {
+		    $dinfo->{_tracks}->[$i]->{_title} =
+			$dinfo->{ttitles}->[$i];
+		};
 	    };
 	};
     };
@@ -309,7 +313,7 @@ sub print_disc_info($$;$$) {
 	str(defined($dbgenre) ? $dbgenre : $dinfo->{dgenre}),
 	$dinfo->{dyear}, str($dinfo->{_performer}),
 	str($dinfo->{_title});
-    if ($print_tracks) {
+    if ($print_tracks and defined $dinfo->{_tracks}) {
 	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
 	    printf "    %02i. %s - %s\n", $i + 1, str(
 		defined $dinfo->{_tracks}->[$i]->{_performer} ?
@@ -391,11 +395,24 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 
 sub encode_tracks($$$) {
     my ($c, $dinfo, $ape_fname) = @_;
-    my $dyear04 = sprintf "%04i", $dinfo->{dyear};
-    my $dperformer_ = str $dinfo->{_performer};
-    my $dtitle_ = str $dinfo->{_title};
-    my $dgenre_ = str $dinfo->{dgenre};
-    my $disc_dname_ = "$dyear04 - $dperformer_ - $dtitle_";
+    my $dyear04 = (defined $dinfo->{dyear}) ?
+	(sprintf "%04i", $dinfo->{dyear}) : undef;
+    my $dperformer_ = str_ $dinfo->{_performer};
+    my $dtitle_ = str_ $dinfo->{_title};
+    my $dgenre_ = str_ $dinfo->{dgenre};
+    my $disc_dname_;
+    # generate meaningful disc_name_ even if year/title/performer isn't
+    # defined:
+    if (defined $dtitle_) {
+	$disc_dname_ = $dperformer_." - ".$disc_dname_
+	    if defined $dperformer_;
+	$disc_dname_ = $dyear04." - ".$disc_dname_
+	    if defined $dyear04;
+    } else {
+	$disc_dname_ = str $ape_fname;
+	$disc_dname_ = s/\A.*\///;
+	$disc_dname_ = s/\.ape\z//i;
+    };
     if (not -d $disc_dname_) {
 	mkdir $disc_dname_ or die "cannot mkdir $disc_dname_ - $!";
     };
@@ -405,11 +422,19 @@ sub encode_tracks($$$) {
 	    defined $dinfo->{_tracks}->[$t - 1]->{_performer} ?
 	    str($dinfo->{_tracks}->[$t - 1]->{_performer}) :
 	    $dperformer_;
-	my $ttitle_ = str $dinfo->{_tracks}->[$t - 1]->{_title};
+	my $ttitle_ = str_ $dinfo->{_tracks}->[$t - 1]->{_title};
 	my $t02 = sprintf "%02i", $t;
-	my ($track_wav_, $track_mp3_) = (
-	    "$disc_dname_/$t02. $tperformer_ - $ttitle_.wav",
-	    "$disc_dname_/$t02. $tperformer_ - $ttitle_.mp3");
+	# generate meaningful track name when title/performer isn't
+	# defined:
+	my $track_base_;
+	if (defined $ttitle_) {
+	    $track_base_ = (defined $tperformer_) ?
+		"$t02. $tperformer_ - $ttitle_" : "$t02. $ttitle_";
+	} else {
+	    $track_base_ = $t02;
+	};
+	my ($track_wav_, $track_mp3_) = ("$track_base_.wav",
+	    "$track_base_.mp3");
 	my @ffmpeg = ("ffmpeg", "-i", $ape_fname,
 	    "-ss", (sprintf "%02i:%02i:%02i.%03i",
 		$c->{$t}->{index01}->{h},
@@ -439,15 +464,14 @@ sub encode_tracks($$$) {
 	my $r = system {$ffmpeg[0]} @ffmpeg;
 	die "ffmpeg error - $!\n" if $r < 0;
 	die "ffmpeg error $?\n" if $r != 0;
-	my @lame = ("lame", "-V2",
-	    "--ty", $dyear04,
-	    "--tl", $dtitle_,
-	    "--tg", $dgenre_,
-	    "--tn", $t,
-	    "--ta", $tperformer_,
-	    "--tt", $ttitle_,
-	);
-	if (defined $dinfo->{_tracks}->[$t - 1]->{_performer}) {
+	my @lame = ("lame", "-V2", "--tn", $t);
+	push @lame, "--ty", $dyear04 if defined $dyear04;
+	push @lame, "--tl", $dtitle_ if defined $dtitle_;
+	push @lame, "--tt", $ttitle_ if defined $ttitle_;
+	push @lame, "--tg", $dgenre_ if defined $dgenre_;
+	push @lame, "--ta", $tperformer_ if defined $tperformer_;
+	if (defined $dinfo->{_tracks}->[$t - 1]->{_performer}
+		and defined $dperformer_) {
 	    push @lame, "--tv", "TPE2=$dperformer_";
 	} else {
 	    push @lame, "--id3v1-only";
