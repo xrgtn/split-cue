@@ -427,7 +427,7 @@ sub encode_tracks($$$) {
 	# push @ffmpeg, "-metadata", "artist=$tperformer_";
 	# push @ffmpeg, "-metadata", "title=$ttitle_";
 	# push @ffmpeg, "-metadata", "albumartist=$dperformer_"
-	#    if defined $c->{$t}->{performer};
+	#    if defined $dinfo->{tracks}->{$t - 1}->{_performer};
 	push @ffmpeg, ("-y", $track_wav_);
 	print join(" ", @ffmpeg)."\n";
 	my $r = system {$ffmpeg[0]} @ffmpeg;
@@ -441,7 +441,7 @@ sub encode_tracks($$$) {
 	    "--ta", $tperformer_,
 	    "--tt", $ttitle_,
 	);
-	if (defined $c->{$t}->{performer}) {
+	if (defined $dinfo->{tracks}->{$t - 1}->{_performer}) {
 	    push @lame, "--tv", "TPE2=$dperformer_";
 	} else {
 	    push @lame, "--id3v1-only";
