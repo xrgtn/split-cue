@@ -374,8 +374,9 @@ sub encode_tracks($$) {
 	    : $dperformer_;
 	my $ttitle_ = encode($loc_charenc, $c->{$t}->{title});
 	my $t02 = sprintf "%02i", $t;
-	my $track_wav_ = "$t02. $tperformer_ - $ttitle_.wav";
-	my $track_mp3_ = "$t02. $tperformer_ - $ttitle_.mp3";
+	my ($track_wav_, $track_mp3_) = (
+	    "$disc_dname_/$t02. $tperformer_ - $ttitle_.wav",
+	    "$disc_dname_/$t02. $tperformer_ - $ttitle_.mp3");
 	my @ffmpeg = ("ffmpeg", "-i", $ape_fname,
 	    "-ss", (sprintf "%02i:%02i:%02i.%03i",
 		$c->{$t}->{index01}->{h},
@@ -400,7 +401,7 @@ sub encode_tracks($$) {
 	# push @ffmpeg, "-metadata", "title=$ttitle_";
 	# push @ffmpeg, "-metadata", "albumartist=$dperformer_"
 	#    if defined $c->{$t}->{performer};
-	push @ffmpeg, ("-y", "$disc_dname_/$track_wav_");
+	push @ffmpeg, ("-y", $track_wav_);
 	print join(" ", @ffmpeg)."\n";
 	my $r = system {$ffmpeg[0]} @ffmpeg;
 	die "ffmpeg error - $!\n" if $r < 0;
@@ -418,12 +419,12 @@ sub encode_tracks($$) {
 	} else {
 	    push @lame, "--id3v1-only";
 	};
-	push @lame, "$disc_dname_/$track_wav_",
-	    "$disc_dname_/$track_mp3_";
+	push @lame, $track_wav_, $track_mp3_;
 	print join(" ", @lame)."\n";
 	$r = system {$lame[0]} @lame;
 	die "lame error - $!\n" if $r < 0;
 	die "lame error $?\n" if $r != 0;
+	unlink $track_wav_ or die "cannot unlink $track_wav_ - $!\n";
     };
 };
 
