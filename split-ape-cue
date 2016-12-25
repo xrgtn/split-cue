@@ -3,6 +3,7 @@
 use strict;
 use warnings;
 use Encode qw(decode encode);
+use Getopt::Std;
 use Data::Dumper;
 
 sub get_loc_charenc() {
@@ -328,8 +329,8 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
     my ($c, $ape_fname, $opts) = @_;
     my (@dinfos, $chosen_disc_no);
     push @dinfos, $c->{disc};
-    # Append disc_infos from CDDB unless -n option is specified:
-    if (not defined $opts->{n}) {
+    # Append disc_infos from CDDB unless -d option is specified:
+    if (not defined $opts->{d}) {
 	# Load CDDB.pm library at runtime:
 	eval {
 	    require CDDB;
@@ -369,7 +370,7 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
     # set autoflush on STDOUT:
     my $oldsel = select(STDOUT); $| = 1; select($oldsel);
     # select one disc from several:
-    if (scalar(@dinfos) > 1) {
+    if (scalar(@dinfos) > 1 and not defined $opts->{n}) {
 	printf "Select a disc data (0-%i) [1]: ", $#dinfos;
 	my $choice = get_choice_or_exit();
 	if ($choice =~ /^\d+$/ and $choice <= $#dinfos) {
@@ -378,17 +379,21 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 	    die "invalid disc data index - $choice\n";
 	};
     } else {
-	$chosen_disc_no = 0;
+	$chosen_disc_no = (defined $opts->{n}) ? $opts->{n} : 0;
     };
+    die "Invalid selected disc $chosen_disc_no\n"
+	if not defined $dinfos[$chosen_disc_no];
     printf "Selected disc %i:\n", $chosen_disc_no;
     print_disc_info($chosen_disc_no, $dinfos[$chosen_disc_no], 1);
     # edit the disc info if requested by user:
-    printf "Do you want to edit the disc info? (y/n) [n]: ";
-    my $choice = get_choice_or_exit();
-    if ($choice eq "y") {
-	edit_disc_info($dinfos[$chosen_disc_no], $c);
-	split_track_titles($dinfos[$chosen_disc_no]);
-	print_disc_info($chosen_disc_no, $dinfos[$chosen_disc_no], 1);
+    if (not defined $opts->{n}) {
+	printf "Do you want to edit the disc info? (y/n) [n]: ";
+	my $choice = get_choice_or_exit();
+	if ($choice eq "y") {
+	    edit_disc_info($dinfos[$chosen_disc_no], $c);
+	    split_track_titles($dinfos[$chosen_disc_no]);
+	    print_disc_info($chosen_disc_no, $dinfos[$chosen_disc_no], 1);
+	};
     };
     return $dinfos[$chosen_disc_no];
 };
@@ -486,6 +491,24 @@ sub encode_tracks($$$) {
     };
 };
 
+sub usage($) {
+    print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
+    print "  where opts are:\n";
+    print "    -d     don't query CDDB server\n";
+    print "    -n  N  select Nth cue/CDDB disc info & don't edit\n";
+    exit $_[0];
+};
+
+# Parse options:
+my $opts = {};
+getopts("dn:", $opts);
+if (defined $opts->{n}) {
+    eval {$opts->{n} = int($opts->{n})};
+    die "Invalid \"-n $opts->{n}\" option value\n"
+	if defined $@ and $@ ne "";
+};
+usage(1) if not @ARGV;
+
 foreach my $f (@ARGV) {
     $f = decode($loc_charenc, $f);
     die "invalid filename - $f\n"
@@ -495,7 +518,7 @@ foreach my $f (@ARGV) {
 	die "$fname doesn't exist\n" if not -e $fname;
     };
     my $c = parse_cue_ape($cue_fname, $ape_fname);
-    my $dinfo = get_and_edit_cue_and_cddb_data($c, $ape_fname);
+    my $dinfo = get_and_edit_cue_and_cddb_data($c, $ape_fname, $opts);
     encode_tracks($c, $dinfo, $ape_fname);
 };
 
