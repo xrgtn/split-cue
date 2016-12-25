@@ -32,48 +32,113 @@ sub get_loc_charenc() {
 # XXX : $loc_charenc is a global variable.
 my $loc_charenc = get_loc_charenc();
 
-# Parse .cue contents from the given file descriptor.
-# Returns hash:
-# {disc=>{performer=>..., title=>...},
-#   1=>{performer=>..., title=>...,
-#     index01=>{m=>..., s=>..., f=>..., ms_ceil=>...},
-#     ...
-#   },
-#   2=>{...},
-#   ...
+sub sum_digits_base_n($$) {
+    my ($x, $base) = @_;
+    my $s = 0;
+    use integer;
+    while ($x > 0) {
+	$s = $s + ($x % $base);
+	$x = $x / $base;
+    };
+    return $s;
+};
+
+# Return total play time of the .ape file in seconds (rounded down).
+sub get_ape_playtime($) {
+    my ($ape_fname) = @_;
+    my $ape_fname_ = encode($loc_charenc, $ape_fname);
+    my $ape_time;
+    # fork child ffmpeg process:
+    my $ffmpeg_pid = open my $ffmpeg_out, "-|";
+    die "cannot fork: $!" if not defined $ffmpeg_pid;
+    if ($ffmpeg_pid == 0) {
+	# child process
+	open STDERR, ">&STDOUT"
+	    or die "Cannot redirect STDERR to STDOUT: $!";
+	exec {"ffmpeg"} ("ffmpeg", "-i", $ape_fname_)
+	    or die "Cannot execute ffmpeg: $!";
+    } else {
+	# parent process
+	while (<$ffmpeg_out>) {
+	    #  Duration: 00:46:25.43, start: 0.000000, ...
+	    if (/^\s*Duration:\s*(\d\d):(\d\d):(\d\d)
+	    \.\d+,/ix) {
+		$ape_time = ($1 * 60 + $2) * 60 + $3;
+	    }
+	};
+	close $ffmpeg_out;
+    };
+    die "cannot detect playtime of $ape_fname_\n"
+	if not defined $ape_time;
+    return $ape_time;
+};
+
+sub calculate_discid2($$) {
+    my ($c, $ape_fname) = @_;
+    return if defined $c->{disc}->{discid2};
+    use integer;
+    # XXX: track01 typically starts at 2 sec (150 frames) offset:
+    @{$c->{disc}->{track_offsets}} =
+	map {150 + $c->{$_}->{index01}->{offs}}
+	sort {$a <=> $b} grep {$_ ne "disc"} keys %$c;
+    $c->{disc}->{offsum} = 0;
+    $c->{disc}->{offsum} += sum_digits_base_n($_ / 75, 10)
+	foreach @{$c->{disc}->{track_offsets}};
+    no integer;
+    # detect total play time of the disc:
+    $c->{disc}->{ape_time} = get_ape_playtime($ape_fname);
+    # calculate discid "hash" for CDDB server:
+    $c->{disc}->{discid2} = sprintf "%02x%04x%02x",
+	$c->{disc}->{offsum} % 255,
+	$c->{disc}->{ape_time},
+	$c->{disc}->{tracks};
+    printf "WARNING: discid:%s != discid2:%s\n",
+	    $c->{disc}->{discid}, $c->{disc}->{discid2}
+	if defined $c->{disc}->{discid} and
+	    lc($c->{disc}->{discid}) ne lc($c->{disc}->{discid2});
+};
+
+# Parse contents of the given .cue and .ape files.
+# Return hash:
+# {disc=>{discid=>, dtitle=>, _performer=>, _title=>, dyear=>,
+#    dgenre=>, ttitles=>, tracks=>, maxtrack=>, discid2=>...},
+#  1=>{type=>, _performer=>, _title=>,
+#   [index00=>{...},] - "pre-gap" index if available
+#    index01=>{h=>, m=>, s=>, ms_ceil=>, ms_floor=>, offs=>...},
+#    ...
+#  },
+#  2=>{...},
+#  ...
 # }
-sub parse_cue($) {
-    my ($cue_fname) = @_;
-    open (my $cue_fd, "<", $cue_fname)
-	or die "cannot open $cue_fname - $!\n";
-    my $r;
+sub parse_cue_ape($$) {
+    my ($cue_fname, $ape_fname) = @_;
+    my $cue_fname_ = encode($loc_charenc, $cue_fname);
+    open (my $cue_fd, "<", $cue_fname_)
+	or die "cannot open $cue_fname_ - $!\n";
+    my $c;
     my $t = "disc";
     while (<$cue_fd>) {
 	$_ = decode($loc_charenc, $_);
 	if (/^\s*title\s+"(.*)"\s*$/i) {
 	    my $title = $1;
-	    $r->{$t}->{title} = $title
+	    $c->{$t}->{_title} = $title
 		if $title !~ /^\s*track\s*\d+\s*$/i;
 	} elsif (/^\s*performer\s+"(.*)"\s*$/i) {
-	    $r->{$t}->{performer} = $1;
+	    $c->{$t}->{_performer} = $1;
 	} elsif (/^\s*rem\s+date\s+(\d+)\s*$/i) {
-	    $r->{$t}->{year} = $1;
+	    $c->{$t}->{dyear} = $1;
 	} elsif (/^\s*rem\s+genre\s+("(.*)"|([^\r\n]*\S))\s*$/i) {
-	    $r->{$t}->{genre} = (defined $2) ? $2 : $3;
+	    $c->{$t}->{dgenre} = (defined $2) ? $2 : $3;
 	} elsif (/^\s*rem\s+comment\s+([^\r\n]*\S)\s*$/i) {
-	    $r->{$t}->{comment} = $1;
+	    $c->{$t}->{comment} = $1;
 	} elsif (/^\s*file\s+"(.*)"\s+(wave)\s*$/i) {
-	    $r->{$t}->{"file/".lc($2)} = $1;
-	} elsif (/^\s*rem\s+discid\s+(([0-9A-F]{2})([0-9A-F]{4})
-	([0-9A-F]{2}))\s*$/ix) {
-	    $r->{$t}->{discid} = $1;
-	    $r->{$t}->{discid_cksum} = hex($2);
-	    $r->{$t}->{discid_time} = hex($3);
-	    $r->{$t}->{discid_tracks} = hex($4);
-	} elsif (/^\s*index\s+(\d+)\s+0*(\d+):0*(\d+):0*(\d+)\s*$/i) {
-	    my ($i, $m, $s, $f) = ("index$1", $2, $3, $4);
+	    $c->{$t}->{"file/".lc($2)} = $1;
+	} elsif (/^\s*rem\s+discid\s+([0-9A-Fa-f]{8})\s*$/i) {
+	    $c->{$t}->{discid} = $1;
+	} elsif (/^\s*index\s+(\d+)\s+(\d\d):(\d\d):(\d\d)\s*$/i) {
+	    my ($i, $m, $s, $f) = ("index$1", 0+$2, 0+$3, 0+$4);
 	    use integer;
-	    $r->{$t}->{$i} = {h=>$m / 60, m=>$m % 60, s=>$s, f=>$f};
+	    $c->{$t}->{$i} = {h=>$m / 60, m=>$m % 60, s=>$s};
 	    no integer;
 	    die "invalid number of seconds for track $t: $_"
 		if $s > 59;
@@ -85,28 +150,26 @@ sub parse_cue($) {
 	    # 75 frames per second). In order to pass these
 	    # positions to ffmpeg's -ss and -to parameters, we
 	    # need to convert them to milliseconds and round up.
-	    $r->{$t}->{$i}->{ms} = 1000.0 * $f / 75;
 	    use integer;
-	    $r->{$t}->{$i}->{ms_floor} = 1000 * $f / 75;
-	    $r->{$t}->{$i}->{ms_ceil} = (1000 * $f + 74) / 75;
+	    $c->{$t}->{$i}->{ms_floor} = 1000 * $f / 75;
+	    $c->{$t}->{$i}->{ms_ceil} = (1000 * $f + 74) / 75;
 	    # Track offset in frames:
-	    $r->{$t}->{$i}->{offs} = ($m * 60 + $s) * 75 + $f;
-	} elsif (/^\s*track\s+(0*(\d+))\s+([^\r\n]*\S)\s*$/i) {
-	    $t = $2;
-	    die "invalid track number - $t\n" if $t == 0;
-	    if (not exists $r->{$t}) {
+	    $c->{$t}->{$i}->{offs} = ($m * 60 + $s) * 75 + $f;
+	} elsif (/^\s*track\s+(\d+)\s+([^\r\n]*\S)\s*$/i) {
+	    $t = 0 + $1;
+	    die "invalid track number - $t\n" if $t < 1;
+	    if (not exists $c->{$t}) {
 		# add new track number to total and max:
-		if (not exists $r->{disc}->{tracks}) {
-		    $r->{disc}->{tracks} = 1;
+		if (not exists $c->{disc}->{tracks}) {
+		    $c->{disc}->{tracks} = 1;
 		} else {
-		    $r->{disc}->{tracks}++;
+		    $c->{disc}->{tracks}++;
 		};
-		$r->{disc}->{maxtrack} = $t
-		    if not exists $r->{disc}->{maxtrack}
-			or $t > $r->{disc}->{maxtrack};
+		$c->{disc}->{maxtrack} = $t
+		    if not exists $c->{disc}->{maxtrack}
+			or $t > $c->{disc}->{maxtrack};
 	    };
-	    $r->{$t}->{track} = $1;
-	    $r->{$t}->{type} = lc($3);
+	    $c->{$t}->{type} = lc($2);
 	} elsif (/^\s*flags\s+([^\r\n]*\S)\s*$/i) {
 	    # XXX ignore
 	} else {
@@ -114,33 +177,31 @@ sub parse_cue($) {
 	};
     };
     close $cue_fd;
+    # validate .cue data:
     die "no tracks found in $cue_fname\n"
-	if not exists $r->{disc}->{maxtrack};
-    die "max track no != num,ber of tracks\n"
-	if $r->{disc}->{maxtrack} != $r->{disc}->{tracks};
-    # find tracks without title/performer:
-    foreach $t (grep {$_ ne "disc"} keys %$r) {
+	if not exists $c->{disc}->{maxtrack};
+    die "max track no != number of tracks\n"
+	if $c->{disc}->{maxtrack} != $c->{disc}->{tracks};
+    # generate CDDB_dinfo-style dtitle:
+    $c->{disc}->{dtitle} = $c->{disc}->{_performer}
+	    ." / ".$c->{disc}->{_title}
+	if defined $c->{disc}->{_performer}
+	    and defined $c->{disc}->{_title};
+    # all tracks (even non-audio) must have index01 field:
+    foreach $t (grep {$_ ne "disc"} keys %$c) {
 	die "no index01 defined for track $t\n"
-	    if not exists $r->{$t}->{index01};
-	if ($r->{$t}->{type} eq "audio"
-	and (not exists $r->{$t}->{title}
-	    or not exists $r->{$t}->{performer}
-	    and not exists $r->{disc}->{performer})) {
-	    $r->{disc}->{untitled_tracks}->{$t} = 1;
+	    if not exists $c->{$t}->{index01};
+	# generate CDDB_dinfo-style ttitles:
+	if ($c->{$t}->{type} eq "audio"
+		and defined $c->{$t}->{_title}) {
+	    $c->{disc}->{ttitles}->[$t - 1] =
+		(defined $c->{$t}->{_performer}) ?
+		"$c->{$t}->{_performer} / $c->{$t}->{_title}"
+		: $c->{$t}->{_title};
 	};
     };
-    return $r;
-};
-
-sub sum_digits_base_n($$) {
-    my ($x, $base) = @_;
-    my $s = 0;
-    use integer;
-    while ($x > 0) {
-	$s = $s + ($x % $base);
-	$x = $x / $base;
-    };
-    return $s;
+    calculate_discid2($c, $ape_fname);
+    return $c;
 };
 
 sub get_choice_or_exit() {
@@ -155,96 +216,110 @@ sub get_choice_or_exit() {
     return $choice;
 };
 
-sub validate_disc_info($) {
-    my ($dinfo) = @_;
-    foreach my $k (("disc length", "dtitle", "dyear",
-    "dgenre", "offsets", "ttitles")) {
-	die "missing disc $k\n" if not defined $dinfo->{$k};
-    };
-    die "invalid disc length - ".$dinfo->{"disc length"}."\n"
-	if $dinfo->{"disc length"} !~ /(\d+)/;
-    $dinfo->{_dlength} = $1;
-    die "invalid disc year - $dinfo->{dyear}\n"
-	if $dinfo->{dyear} !~ /^\d{4}$/;
-    die "invalid disc performer / title - $dinfo->{dtitle}\n"
-	if $dinfo->{dtitle} !~ m{^(.*) / (.*)$};
-    ($dinfo->{_performer}, $dinfo->{_title}) = ($1, $2);
+# Return $x converted to printable (locale-encoded) string.
+sub str($) {
+    my ($x) = @_;
+    return "???" if not defined $x;
+    return encode($loc_charenc, $x);
 };
 
-sub edit_disc_info($) {
-    my ($dinfo) = @_;
-    printf "Disc genre [%s]: ",
-	encode($loc_charenc, $dinfo->{dgenre});
+# Edit disc genre, year, performer, title and titles for all audio
+# tracks (as indicated by .cue track type in the second parameter).
+sub edit_disc_info($$) {
+    my ($dinfo, $c) = @_;
+    # set autoflush on STDOUT:
+    my $oldsel = select(STDOUT); $| = 1; select($oldsel);
+    # Edit disc genre:
+    printf "Disc genre [%s]: ", str $dinfo->{dgenre};
     my $choice = get_choice_or_exit();
-    $dinfo->{genre} = $choice if $choice ne "";
-    printf "Disc year [%s]: ",
-	encode($loc_charenc, $dinfo->{dyear});
+    if ($choice ne "") {
+	$dinfo->{dgenre} = $choice;
+    } elsif (not defined $dinfo->{dgenre}) {
+	die "Disc genre is required\n";
+    };
+    # Edit disc year:
+    printf "Disc year [%s]: ", str $dinfo->{dyear};
     $choice = get_choice_or_exit();
     if ($choice =~ /^\d{4}$/) {
 	$dinfo->{year} = $choice;
     } elsif ($choice ne "") {
-	die "invalid year - $choice\n";
+	die "Invalid disc year - $choice\n";
+    } elsif (not defined $dinfo->{year}) {
+	die "Disc year is required\n";
     };
-    printf "Disc performer [%s]: ",
-	encode($loc_charenc, $dinfo->{_performer});
+    # Edit disc performer:
+    printf "Disc performer [%s]: ", str $dinfo->{_performer};
     $choice = get_choice_or_exit();
-    $dinfo->{_performer} = $choice if $choice ne "";
-    printf "Disc title [%s]: ",
-	encode($loc_charenc, $dinfo->{_title});
+    if ($choice ne "") {
+	$dinfo->{_performer} = $choice;
+    } elsif (not defined $dinfo->{_performer}
+	    or $dinfo->{_performer} eq "") {
+	die "Disc performer is required\n";
+    };
+    # Edit disc title:
+    printf "Disc title [%s]: ", str $dinfo->{_title};
     $choice = get_choice_or_exit();
-    $dinfo->{_title} = $choice if $choice ne "";
-    for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
-	if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
-	    printf "Track %02i performer / title [%s]: ", $i + 1,
-		encode($loc_charenc, $dinfo->{ttitles}->[$i]);
-	} else {
-	    printf "Track %02i title [%s]: ", $i + 1,
-		encode($loc_charenc, $dinfo->{ttitles}->[$i]);
-	};
+    if ($choice ne "") {
+	$dinfo->{_title} = $choice;
+    } elsif (not defined $dinfo->{_title}
+	    or $dinfo->{_title} eq "") {
+	die "Disc title is required\n";
+    };
+    # Edit track titles (performers/titles):
+    foreach my $t (sort {$a <=> $b} grep {$_ ne "disc"
+		and $c->{$_}->{type} eq "audio"} keys %$c) {
+	my $tt = $dinfo->{ttitles}->[$t - 1];
+	my $k = (defined $tt and $tt =~ m{^(.*) / (.*)$}) ?
+	    "performer / title" : "title";
+	printf "Track %02i %s [%s]: ", $t, $k, str $tt;
 	$choice = get_choice_or_exit();
-	$dinfo->{ttitles}->[$i] = $choice if $choice ne "";
+	if ($choice ne "") {
+	    $dinfo->{ttitles}->[$t - 1] = $choice;
+	} elsif (not defined $tt) {
+	    die "Track ".(sprintf "%02i", $t)." $k is required\n";
+	};
     };
 };
 
-sub split_track_performer_title($) {
+sub split_track_titles($) {
     my ($dinfo) = @_;
     for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
-	if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
-	    $dinfo->{_tracks}->[$i]->{_performer} = $1;
-	    $dinfo->{_tracks}->[$i]->{_title} = $2;
-	} else {
-	    $dinfo->{_tracks}->[$i]->{_title} =
-		$dinfo->{ttitles}->[$i];
+	if (defined $dinfo->{ttitles}->[$i]) {
+	    if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
+		$dinfo->{_tracks}->[$i]->{_performer} = $1;
+		$dinfo->{_tracks}->[$i]->{_title} = $2;
+	    } else {
+		$dinfo->{_tracks}->[$i]->{_title} =
+		    $dinfo->{ttitles}->[$i];
+	    };
 	};
     };
 };
 
-sub print_disc_info($;$$) {
-    my ($dinfo, $print_tracks, $dbgenre) = @_;
+sub print_disc_info($$;$$) {
+    my ($disc_no, $dinfo, $print_tracks, $dbgenre) = @_;
     printf "%3i. %s: %s, %04i - %s - %s\n",
-	$dinfo->{_disc_no} + 1,
-	$dinfo->{discid},
-	encode($loc_charenc, defined($dbgenre) ? $dbgenre
-	    : $dinfo->{dgenre}),
-	$dinfo->{dyear},
-	encode($loc_charenc, $dinfo->{_performer}),
-	encode($loc_charenc, $dinfo->{_title});
+	$disc_no, $dinfo->{discid},
+	str(defined($dbgenre) ? $dbgenre : $dinfo->{dgenre}),
+	$dinfo->{dyear}, str($dinfo->{_performer}),
+	str($dinfo->{_title});
     if ($print_tracks) {
 	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
-	    printf "    %02i. %s - %s\n", $i + 1,
-		encode($loc_charenc,
-		    defined $dinfo->{_tracks}->[$i]->{_performer} ?
-		    $dinfo->{_tracks}->[$i]->{_performer}
-		    : $dinfo->{_performer}),
-		encode($loc_charenc,
-		    $dinfo->{_tracks}->[$i]->{_title});
+	    printf "    %02i. %s - %s\n", $i + 1, str(
+		defined $dinfo->{_tracks}->[$i]->{_performer} ?
+		$dinfo->{_tracks}->[$i]->{_performer} :
+	       	$dinfo->{_performer}),
+		str($dinfo->{_tracks}->[$i]->{_title});
 	};
     };
 };
 
-sub get_missing_data_from_cddb_or_ape($$) {
-    my ($c, $ape_fname) = @_;
-    if (exists $c->{disc}->{untitled_tracks} or 1) {
+sub get_and_edit_cue_and_cddb_data($$;$) {
+    my ($c, $ape_fname, $opts) = @_;
+    my (@dinfos, $chosen_disc_no);
+    push @dinfos, $c->{disc};
+    # Append disc_infos from CDDB unless -n option is specified:
+    if (not defined $opts->{n}) {
 	# Load CDDB.pm library at runtime:
 	eval {
 	    require CDDB;
@@ -257,122 +332,74 @@ sub get_missing_data_from_cddb_or_ape($$) {
 	    Login => 'nobody',
 	) or die "Cannot init CDDB - $!\n";
 	$cddb->{hostname} = "localhost";
-	use integer;
-	# XXX: track01 typically starts at 2 sec (150 frames) offset:
-	@{$c->{disc}->{track_offsets}} =
-	    map {150 + $c->{$_}->{index01}->{offs}}
-	    sort {$a <=> $b} grep {$_ ne "disc"} keys %$c;
-	$c->{disc}->{offsum} = 0;
-	$c->{disc}->{offsum} += sum_digits_base_n($_ / 75, 10)
-	    foreach @{$c->{disc}->{track_offsets}};
-	no integer;
-	# detect total play time of the disc:
-	if (not exists $c->{disc}->{discid_time} or 1) {
-	    # fork child ffmpeg process:
-	    my $ffmpeg_pid = open my $ffmpeg_out, "-|";
-	    die "cannot fork: $!" if not defined $ffmpeg_pid;
-	    if ($ffmpeg_pid == 0) {
-		# child
-		open STDERR, ">&STDOUT"
-		    or die "Cannot redirect STDERR to STDOUT: $!";
-		exec {"ffmpeg"} ("ffmpeg", "-i", $ape_fname)
-		    or die "Cannot execute ffmpeg: $!";
-	    } else {
-		# parent
-		while (<$ffmpeg_out>) {
-		    #  Duration: 00:46:25.43, start: 0.000000, ...
-		    if (/^\s*Duration:\s*(\d\d):(\d\d):(\d\d)
-		    \.\d+,/ix) {
-			$c->{disc}->{ape_time} =
-			    ($1 * 60 + $2) * 60 + $3;
-		    }
-		};
-		close $ffmpeg_out;
-	    };
-	};
-	# calculate discid "hash" for CDDB server:
-	$c->{disc}->{discid2} = sprintf "%02x%04x%02x",
-	    $c->{disc}->{offsum} % 255,
-	    $c->{disc}->{ape_time},
-	    $c->{disc}->{tracks};
 	# query CDDB server:
-	print "get  $c->{disc}->{discid2}: ".join(" ",
-	    @{$c->{disc}->{track_offsets}})
-	    ." $c->{disc}->{ape_time}\n";
+	printf "Get  %s: %s %s...\n", $c->{disc}->{discid2},
+	    join(" ", @{$c->{disc}->{track_offsets}}),
+	    $c->{disc}->{ape_time};
 	my @discs = $cddb->get_discs(
 	    $c->{disc}->{discid2},
 	    $c->{disc}->{track_offsets},
 	    $c->{disc}->{ape_time}
 	);
 	# get detailed info for each CDDB disc:
-	my ($disc_no, $dinfo, @valid_discs) = (0);
 	foreach my $disc (@discs) {
 	    my ($dbgenre, $dbid, $dbperformertitle) = @$disc;
-	    $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
-	    validate_disc_info($dinfo);
-	    split_track_performer_title($dinfo);
-	    $dinfo->{_disc_no} = $disc_no;
-	    print_disc_info($dinfo, 0, $dbgenre);
-	    $valid_discs[$disc_no++] = $dinfo;
-	};
-	# select one disc from several:
-	my $chosen_disc_no = 0;
-	if (scalar(@valid_discs) > 1) {
-	    my $oldsel = select(STDOUT); $| = 1; select($oldsel);
-	    printf "Select a disc data (1-%i) [1]: ",
-		scalar(@valid_discs);
-	    my $choice = get_choice_or_exit();
-	    if ($choice =~ /^\d+$/ and $choice >= 1
-	    and $choice <= scalar(@valid_discs)) {
-		$chosen_disc_no = $choice - 1;
-	    } elsif ($choice ne "") {
-		die "invalid CDDB disc number - $choice\n";
-	    };
-	};
-	printf "Selected disc %i:\n", $chosen_disc_no + 1;
-	$dinfo = $valid_discs[$chosen_disc_no];
-	print_disc_info($dinfo, 1);
-	# edit the disc info if requested by user:
-	printf "Do you want to edit the disc info? (y/n) [n]: ";
-	my $choice = get_choice_or_exit();
-	if ($choice eq "y") {
-	    edit_disc_info($dinfo);
-	    split_track_performer_title($dinfo);
-	    print_disc_info($dinfo, 1);
-	};
-	# pass dinfo data to $c:
-	$c->{disc}->{performer} = $dinfo->{_performer};
-	$c->{disc}->{title} = $dinfo->{_title};
-	$c->{disc}->{year} = $dinfo->{dyear};
-	$c->{disc}->{genre} = $dinfo->{dgenre};
-	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
-	    my $_track = $dinfo->{_tracks}->[$i];
-	    $c->{$i + 1}->{title} = $_track->{_title};
-	    if (defined $_track->{_performer}) {
-		$c->{$i + 1}->{performer} = $_track->{_performer};
-	    } else {
-		undef $c->{$i + 1}->{performer};
-	    };
+	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
+	    ($dinfo->{_performer}, $dinfo->{_title}) = ($1, $2)
+		if defined($dinfo->{dtitle})
+		    and $dinfo->{dtitle} =~ m{^(.*) / (.*)$};
+	    push @dinfos, $dinfo;
 	};
     };
+    # print all disc infos:
+    for (my $i = 0; $i < scalar(@dinfos); $i++) {
+	split_track_titles($dinfos[$i]);
+	print_disc_info($i, $dinfos[$i], 0, $dinfos[$i]->{genre});
+    };
+    # set autoflush on STDOUT:
+    my $oldsel = select(STDOUT); $| = 1; select($oldsel);
+    # select one disc from several:
+    if (scalar(@dinfos) > 1) {
+	printf "Select a disc data (0-%i) [1]: ", $#dinfos;
+	my $choice = get_choice_or_exit();
+	if ($choice =~ /^\d+$/ and $choice <= $#dinfos) {
+	    $chosen_disc_no = $choice;
+	} elsif ($choice ne "") {
+	    die "invalid disc data index - $choice\n";
+	};
+    } else {
+	$chosen_disc_no = 0;
+    };
+    printf "Selected disc %i:\n", $chosen_disc_no;
+    print_disc_info($chosen_disc_no, $dinfos[$chosen_disc_no], 1);
+    # edit the disc info if requested by user:
+    printf "Do you want to edit the disc info? (y/n) [n]: ";
+    my $choice = get_choice_or_exit();
+    if ($choice eq "y") {
+	edit_disc_info($dinfos[$chosen_disc_no], $c);
+	split_track_titles($dinfos[$chosen_disc_no]);
+	print_disc_info($chosen_disc_no, $dinfos[$chosen_disc_no], 1);
+    };
+    return $dinfos[$chosen_disc_no];
 };
 
-sub encode_tracks($$) {
-    my ($c, $ape_fname) = @_;
-    my $dyear04 = sprintf "%04i", $c->{disc}->{year};
-    my $dperformer_ = encode($loc_charenc, $c->{disc}->{performer});
-    my $dtitle_ = encode($loc_charenc, $c->{disc}->{title});
-    my $dgenre_ = encode($loc_charenc, $c->{disc}->{genre});
+sub encode_tracks($$$) {
+    my ($c, $dinfo, $ape_fname) = @_;
+    my $dyear04 = sprintf "%04i", $dinfo->{dyear};
+    my $dperformer_ = str $dinfo->{_performer};
+    my $dtitle_ = str $dinfo->{_title};
+    my $dgenre_ = str $dinfo->{dgenre};
     my $disc_dname_ = "$dyear04 - $dperformer_ - $dtitle_";
     if (not -d $disc_dname_) {
 	mkdir $disc_dname_ or die "cannot mkdir $disc_dname_ - $!";
     };
     foreach my $t (sort {$a <=> $b} grep {$_ ne "disc"
     and $c->{$_}->{type} eq "audio"} keys %$c) {
-	my $tperformer_ = defined $c->{$t}->{performer} ?
-	    encode($loc_charenc, $c->{$t}->{performer})
-	    : $dperformer_;
-	my $ttitle_ = encode($loc_charenc, $c->{$t}->{title});
+	my $tperformer_ =
+	    defined $dinfo->{tracks}->{$t - 1}->{_performer} ?
+	    str($dinfo->{tracks}->{$t - 1}->{_performer}) :
+	    $dperformer_;
+	my $ttitle_ = str $dinfo->{tracks}->{$t - 1}->{_title};
 	my $t02 = sprintf "%02i", $t;
 	my ($track_wav_, $track_mp3_) = (
 	    "$disc_dname_/$t02. $tperformer_ - $ttitle_.wav",
@@ -436,9 +463,9 @@ foreach my $f (@ARGV) {
     foreach my $fname ($ape_fname, $cue_fname) {
 	die "$fname doesn't exist\n" if not -e $fname;
     };
-    my $c = parse_cue($cue_fname);
-    get_missing_data_from_cddb_or_ape($c, $ape_fname);
-    encode_tracks($c, $ape_fname);
+    my $c = parse_cue_ape($cue_fname, $ape_fname);
+    my $dinfo = get_and_edit_cue_and_cddb_data($c, $ape_fname);
+    encode_tracks($c, $dinfo, $ape_fname);
 };
 
 # vi:set sw=4 noet ts=8 tw=71:
