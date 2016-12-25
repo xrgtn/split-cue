@@ -241,10 +241,10 @@ sub edit_disc_info($$) {
     printf "Disc year [%s]: ", str $dinfo->{dyear};
     $choice = get_choice_or_exit();
     if ($choice =~ /^\d{4}$/) {
-	$dinfo->{year} = $choice;
+	$dinfo->{dyear} = $choice;
     } elsif ($choice ne "") {
 	die "Invalid disc year - $choice\n";
-    } elsif (not defined $dinfo->{year}) {
+    } elsif (not defined $dinfo->{dyear}) {
 	die "Disc year is required\n";
     };
     # Edit disc performer:
