@@ -417,7 +417,7 @@ sub encode_tracks($$$$) {
 	    $dperformer_." - ".$dtitle_ : $dtitle_;
 	$disc_dname_ = $dyear04." - ".$disc_dname_
 	    if defined $dyear04;
-	$disc_dname_ = s/\//|/g;
+	$disc_dname_ =~ s!/!|!g;
     } else {
 	$disc_dname_ = str $ape_fname;
 	$disc_dname_ = s/\A.*\///;
@@ -443,7 +443,7 @@ sub encode_tracks($$$$) {
 	} else {
 	    $track_base_ = $t02;
 	};
-	$track_base_ = s/\//|/g;
+	$track_base_ =~ s!/!|!g;
 	my ($track_wav_, $track_mp3_) = (
 	    "$disc_dname_/$track_base_.wav",
 	    "$disc_dname_/$track_base_.mp3");
