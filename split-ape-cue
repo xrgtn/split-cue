@@ -298,10 +298,12 @@ sub split_track_titles($) {
 		if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
 		    $dinfo->{_tracks}->[$i]->{_performer} = $1;
 		    $dinfo->{_tracks}->[$i]->{_title} = $2;
+		    $dinfo->{_tracks}->[$i]->{_performer} =~ s!//!/!g;
 		} else {
 		    $dinfo->{_tracks}->[$i]->{_title} =
 			$dinfo->{ttitles}->[$i];
 		};
+		$dinfo->{_tracks}->[$i]->{_title} =~ s!//!/!g;
 	    };
 	};
     };
