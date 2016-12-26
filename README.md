@@ -53,6 +53,8 @@ taking the 1st matching CDDB record. "-n2" is for the 2nd CDDB record
 and so on. "-n-1" means the last matching record, "-n-2" - the one
 before last etc. To take .cue data without any prompting, use "-dn0".
 
+### Caching edited descriptions
+
 When user edits disc info, it's cached in the ~/.cddb/_genre_/_discid_
 file. When user selects a disc info that he edited before, the cached
 data is retrieved so he/she doesn't need to edit the same disc/tracks
