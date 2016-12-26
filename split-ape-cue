@@ -113,6 +113,18 @@ sub halve_slashes($) {
     return $x;
 };
 
+sub put_together_dtitle($) {
+    my ($dinfo) = @_;
+    if (defined $dinfo->{_title}) {
+	if (defined $dinfo->{_performer}) {
+	    $dinfo->{dtitle} = double_slashes($dinfo->{_performer})
+		." / ".double_slashes($dinfo->{_title});
+	} else {
+	    $dinfo->{dtitle} = double_slashes($dinfo->{_title});
+	};
+    };
+};
+
 # Parse contents of the given .cue and .ape files.
 # Return hash:
 # {disc=>{discid_cue=>, dtitle=>, _performer=>, _title=>, dyear=>,
@@ -198,11 +210,7 @@ sub parse_cue_ape($$) {
     die "max track no != number of tracks\n"
 	if $c->{disc}->{maxtrack} != $c->{disc}->{tracks};
     # generate CDDB_dinfo-style dtitle:
-    $c->{disc}->{dtitle} =
-	    double_slashes($c->{disc}->{_performer})
-	    ." / ".double_slashes($c->{disc}->{_title})
-	if defined $c->{disc}->{_performer}
-	    and defined $c->{disc}->{_title};
+    put_together_dtitle $c->{disc};
     # use "cue" as CDDB genre (NOT dgenre):
     $c->{disc}->{genre} = "cue";
     # all tracks (even non-audio) must have index01 field:
@@ -250,6 +258,25 @@ sub str($) {
     return (defined $_[0]) ? encode($loc_charenc, $_[0]) : "???";
 };
 
+sub split_track_titles($) {
+    my ($dinfo) = @_;
+    if (defined $dinfo->{ttitles}) {
+	for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
+	    if (defined $dinfo->{ttitles}->[$i]) {
+		if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
+		    $dinfo->{_tracks}->[$i]->{_performer} =
+			halve_slashes $1;
+		    $dinfo->{_tracks}->[$i]->{_title} =
+			halve_slashes $2;
+		} else {
+		    $dinfo->{_tracks}->[$i]->{_title} =
+			halve_slashes $dinfo->{ttitles}->[$i];
+		};
+	    };
+	};
+    };
+};
+
 # Edit disc genre, year, performer, title and titles for all audio
 # tracks (as indicated by .cue track type in the second parameter).
 sub edit_disc_info($$) {
@@ -292,6 +319,9 @@ sub edit_disc_info($$) {
 	    or $dinfo->{_title} eq "") {
 	die "Disc title is required\n";
     };
+    # Put together dtitle anew, because _title and/or _performer might
+    # have been changed:
+    put_together_dtitle $dinfo;
     # Edit track titles (performers/titles):
     foreach my $t (sort {$a <=> $b} grep {$_ ne "disc"
 		and $c->{$_}->{type} eq "audio"} keys %$c) {
@@ -306,23 +336,18 @@ sub edit_disc_info($$) {
 	    die "Track ".(sprintf "%02i", $t)." $k is required\n";
 	};
     };
+    # ttitles might have been edited, split them into _tracks anew:
+    split_track_titles $dinfo;
 };
 
-sub split_track_titles($) {
+sub split_dtitle($) {
     my ($dinfo) = @_;
-    if (defined $dinfo->{ttitles}) {
-	for (my $i = 0; $i < scalar(@{$dinfo->{ttitles}}); $i++) {
-	    if (defined $dinfo->{ttitles}->[$i]) {
-		if ($dinfo->{ttitles}->[$i] =~ m{^(.*) / (.*)$}) {
-		    $dinfo->{_tracks}->[$i]->{_performer} =
-			halve_slashes $1;
-		    $dinfo->{_tracks}->[$i]->{_title} =
-			halve_slashes $2;
-		} else {
-		    $dinfo->{_tracks}->[$i]->{_title} =
-			halve_slashes $dinfo->{ttitles}->[$i];
-		};
-	    };
+    if (defined($dinfo->{dtitle})) {
+	if ($dinfo->{dtitle} =~ m{^(.*) / (.*)$}) {
+	    $dinfo->{_performer} = halve_slashes $1;
+	    $dinfo->{_title} = halve_slashes $2;
+	} else {
+	    $dinfo->{_title} = halve_slashes $dinfo->{dtitle};
 	};
     };
 };
@@ -382,9 +407,44 @@ sub write_cddb_disc_info_cache($) {
     };
 };
 
+# Read 1st matching cached info from ~/.cddb/$genre/$discid file.
+sub read_cddb_disc_info_cache($) {
+    my ($dinfo) = @_;
+    # "genre" and "discid" fields are required:
+    defined $dinfo->{$_} or die "Disc $_ not defined\n"
+	foreach qw(discid genre);
+    die "Invalid disc genre $dinfo->{genre}\n"
+	if $dinfo->{genre} !~ /\A[a-z_-]+\z/;
+    # Find user's home directory:
+    my $homedir = (defined $ENV{HOME} and $ENV{HOME} ne "") ?
+	$ENV{HOME} : $ENV{LOGDIR};
+    return undef if not defined $homedir or $homedir eq "";
+    foreach my $discid (split /\s*,\s*/, $dinfo->{discid}) {
+	my $cache_fname = "$homedir/.cddb/$dinfo->{genre}/$discid";
+	if (-f $cache_fname or -l $cache_fname) {
+	    open my $cache_fh, "<", $cache_fname
+		or die "Cannot open $cache_fname - $!\n";
+	    my $ci;
+	    /\A\s*([^=]*[^=\s])\s*=\s*([^\r\n]*\S)\s\z/
+		    and $ci->{lc($1)} = $2
+		while (<$cache_fh>);
+	    close $cache_fh;
+	    defined $ci->{$_} and $dinfo->{$_} = $ci->{$_}
+		foreach qw(dtitle dyear dgenre);
+	    /^ttitle(\d+)$/ and $dinfo->{ttitles}->[$1] = $ci->{$_}
+		foreach keys %$ci;
+	    split_dtitle($dinfo);
+	    split_track_titles($dinfo);
+	    last;
+	};
+    };
+};
+
 sub get_and_edit_cue_and_cddb_data($$;$) {
     my ($c, $ape_fname, $opts) = @_;
     my (@dinfos, $chosen_disc_no);
+    # Read cached data for .cue dinfo unless -c option is given:
+    read_cddb_disc_info_cache($c->{disc}) if not $opts->{c};
     push @dinfos, $c->{disc};
     # Append disc_infos from CDDB unless -d option is specified:
     if (not defined $opts->{d}) {
@@ -413,16 +473,13 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 	foreach my $disc (@discs) {
 	    my ($dbgenre, $dbid, $dbperformertitle) = @$disc;
 	    my $dinfo = $cddb->get_disc_details($dbgenre, $dbid);
-	    ($dinfo->{_performer}, $dinfo->{_title}) = (
-		    halve_slashes($1), halve_slashes($2))
-		if defined($dinfo->{dtitle})
-		    and $dinfo->{dtitle} =~ m{^(.*) / (.*)$};
+	    split_dtitle($dinfo);
+	    split_track_titles($dinfo);
 	    push @dinfos, $dinfo;
 	};
     };
     # print all disc infos:
     for (my $i = 0; $i < scalar(@dinfos); $i++) {
-	split_track_titles($dinfos[$i]);
 	print_disc_info($i, $dinfos[$i], 0, $dinfos[$i]->{genre});
     };
     # set autoflush on STDOUT:
@@ -444,6 +501,10 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
     die "Invalid selected disc $chosen_disc_no\n"
 	if not defined $dinfos[$chosen_disc_no];
     printf "Selected disc %i:\n", $chosen_disc_no;
+    # read cached info for the chosen disc unless cache reading is
+    # disabled by option -c:
+    read_cddb_disc_info_cache($dinfos[$chosen_disc_no])
+	if not $opts->{c};
     print_disc_info($chosen_disc_no, $dinfos[$chosen_disc_no], 1);
     # edit the disc info if requested by user:
     if (not defined $opts->{n}) {
@@ -566,6 +627,7 @@ sub usage($) {
     print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
     print "  where opts are:\n";
     print "    -b N  encode mp3's with constant bitrate of Nkbits\n";
+    print "    -c    don't read ~/.cddb/<genre>/<discid> cache\n";
     print "    -d    don't query CDDB server\n";
     print "    -n N  select Nth cue/CDDB disc info & don't edit\n";
     print "    -q L  encode mp3's with VBR at quality level L\n";
