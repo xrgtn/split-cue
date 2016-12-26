@@ -375,7 +375,9 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 	my $choice = get_choice_or_exit();
 	if ($choice =~ /^\d+$/ and $choice <= $#dinfos) {
 	    $chosen_disc_no = $choice;
-	} elsif ($choice ne "") {
+	} elsif ($choice eq "") {
+	    $chosen_disc_no = 1;
+	} else {
 	    die "invalid disc data index - $choice\n";
 	};
     } else {
