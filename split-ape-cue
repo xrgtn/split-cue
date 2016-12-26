@@ -398,8 +398,8 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
     return $dinfos[$chosen_disc_no];
 };
 
-sub encode_tracks($$$) {
-    my ($c, $dinfo, $ape_fname) = @_;
+sub encode_tracks($$$$) {
+    my ($c, $dinfo, $ape_fname, $opts) = @_;
     my $dyear04 = (defined $dinfo->{dyear}) ?
 	(sprintf "%04i", $dinfo->{dyear}) : undef;
     my $dperformer_ = str_ $dinfo->{_performer};
@@ -470,7 +470,15 @@ sub encode_tracks($$$) {
 	my $r = system {$ffmpeg[0]} @ffmpeg;
 	die "ffmpeg error - $!\n" if $r < 0;
 	die "ffmpeg error $?\n" if $r != 0;
-	my @lame = ("lame", "-V2", "--tn", $t);
+	my @lame = ("lame", "--tn", $t);
+	# Add bitrate/quality options:
+	if (defined $opts->{q}) {
+	    push @lame, "-V", $opts->{q};
+	} elsif (defined $opts->{b}) {
+	    push @lame, "-b", $opts->{b};
+	} else {
+	    push @lame, "-V2";
+	};
 	push @lame, "--ty", $dyear04 if defined $dyear04;
 	push @lame, "--tl", $dtitle_ if defined $dtitle_;
 	push @lame, "--tt", $ttitle_ if defined $ttitle_;
@@ -494,20 +502,25 @@ sub encode_tracks($$$) {
 sub usage($) {
     print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
     print "  where opts are:\n";
+    print "    -b  N  encode mp3's with constant bitrate of Nkbits\n";
     print "    -d     don't query CDDB server\n";
     print "    -n  N  select Nth cue/CDDB disc info & don't edit\n";
+    print "    -q  L  encode mp3's with VBR at quality level L\n";
     exit $_[0];
 };
 
 # Parse options:
 my $opts = {};
-getopts("dn:", $opts);
-if (defined $opts->{n}) {
-    eval {$opts->{n} = int($opts->{n})};
-    die "Invalid \"-n $opts->{n}\" option value\n"
-	if defined $@ and $@ ne "";
+my $opts_ok = getopts("b:dn:q:", $opts);
+foreach my $o (qw(b q)) {
+    die "Invalid \"-$o $opts->{$o}\" option value\n"
+	if defined $opts->{$o} and $opts->{$o} !~ /\A\d+\z/;
 };
-usage(1) if not @ARGV;
+foreach my $o (qw(n)) {
+    die "Invalid \"-$o $opts->{$o}\" option value\n"
+	if defined $opts->{$o} and $opts->{$o} !~ /\A-?\d+\z/;
+};
+usage(1) if not @ARGV or not $opts_ok;
 
 foreach my $f (@ARGV) {
     $f = decode($loc_charenc, $f);
@@ -519,7 +532,7 @@ foreach my $f (@ARGV) {
     };
     my $c = parse_cue_ape($cue_fname, $ape_fname);
     my $dinfo = get_and_edit_cue_and_cddb_data($c, $ape_fname, $opts);
-    encode_tracks($c, $dinfo, $ape_fname);
+    encode_tracks($c, $dinfo, $ape_fname, $opts);
 };
 
 # vi:set sw=4 noet ts=8 tw=71:
