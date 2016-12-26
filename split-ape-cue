@@ -508,10 +508,10 @@ sub encode_tracks($$$$) {
 sub usage($) {
     print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
     print "  where opts are:\n";
-    print "    -b  N  encode mp3's with constant bitrate of Nkbits\n";
-    print "    -d     don't query CDDB server\n";
-    print "    -n  N  select Nth cue/CDDB disc info & don't edit\n";
-    print "    -q  L  encode mp3's with VBR at quality level L\n";
+    print "    -b N  encode mp3's with constant bitrate of Nkbits\n";
+    print "    -d    don't query CDDB server\n";
+    print "    -n N  select Nth cue/CDDB disc info & don't edit\n";
+    print "    -q L  encode mp3's with VBR at quality level L\n";
     exit $_[0];
 };
 
