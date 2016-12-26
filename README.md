@@ -40,10 +40,11 @@ As you can see, current CDDB solution for the problem is to remove
 spaces around the slash, but the actual title for this Clash song do
 contain spaces around slash - check [Super Black Market Clash]
 (https://en.wikipedia.org/wiki/Super_Black_Market_Clash) description on
-the Wikipedia for a proof. With split-ape-cue you can have " / "
-anywhere:
+the Wikipedia for a proof. With split-ape-cue you can put " / " both
+into artist name ("AD / BC") and track ("Justice Tonight / Kick It
+Over"):
 
-   Track 12 title [???]: AD // BC / Justice Tonight // Kick It Over
+    Track 12 title [???]: AD // BC / Justice Tonight // Kick It Over
 
 It's possible to avoid any user prompts when you pass "-n X" option to
 split-ape-cue. The "X" number after "-n" option indicates which disc
