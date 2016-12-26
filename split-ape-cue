@@ -636,7 +636,7 @@ sub usage($) {
 
 # Parse options:
 my $opts = {};
-my $opts_ok = getopts("b:dn:q:", $opts);
+my $opts_ok = getopts("b:cdn:q:", $opts);
 foreach my $o (qw(b q)) {
     die "Invalid \"-$o $opts->{$o}\" option value\n"
 	if defined $opts->{$o} and $opts->{$o} !~ /\A\d+\z/;
