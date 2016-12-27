@@ -39,17 +39,17 @@ For example:
 
     Track 12 title [Justice Tonight/Kick It Over]: Justice Tonight // Kick It Over
 
-As you can see, current CDDB solution for the problem is to remove
-spaces around the slash, but the actual title for this Clash song do
-contain spaces around slash - check [Super Black Market Clash]
-(https://en.wikipedia.org/wiki/Super_Black_Market_Clash) description on
-the Wikipedia for a proof. With split-ape-cue you can put " / " both
-into artist name ("AD / BC") and track ("Justice Tonight / Kick It
-Over"):
+As you can notice in the default value for the track 12 ("Justice
+Tonight/Kick It Over"), current CDDB solution for the problem is to
+remove spaces around the slash, but the actual title for this Clash
+song do contain spaces around slash - check [Super Black Market Clash]
+(https://en.wikipedia.org/wiki/Super_Black_Market_Clash) on the
+Wikipedia for a proof. With split-ape-cue you can put " / " both into
+track artist ("AD / BC") and title ("Justice Tonight / Kick It Over"):
 
     Track 12 title [???]: AD // BC / Justice Tonight // Kick It Over
 
-It's possible to avoid any user prompts when you pass "-n X" option to
+It's possible to avoid any prompting when you pass "-n X" option to
 split-ape-cue. The "X" number after "-n" option indicates which disc
 info record to use. "-n0" stands for .cue file data. "-n1" means
 taking the 1st matching CDDB record. "-n2" is for the 2nd CDDB record
