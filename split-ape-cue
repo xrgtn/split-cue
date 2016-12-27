@@ -355,10 +355,12 @@ sub split_dtitle($) {
 
 sub print_disc_info($$;$$) {
     my ($disc_no, $dinfo, $print_tracks, $dbgenre) = @_;
-    printf "%3i. %s: %s, %04i - %s - %s\n",
+    printf "%3i. %s: %s, %s - %s - %s\n",
 	$disc_no, $dinfo->{discid},
 	str(defined($dbgenre) ? $dbgenre : $dinfo->{dgenre}),
-	$dinfo->{dyear}, str($dinfo->{_performer}),
+	(defined($dinfo->{dyear}) ? sprintf("%04i", $dinfo->{dyear})
+	    : "????"),
+	str($dinfo->{_performer}),
 	str($dinfo->{_title});
     if ($print_tracks and defined $dinfo->{_tracks}) {
 	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
