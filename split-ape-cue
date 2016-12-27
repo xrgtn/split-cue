@@ -652,9 +652,21 @@ usage(1) if not @ARGV or not $opts_ok;
 
 foreach my $f (@ARGV) {
     $f = decode($loc_charenc, $f);
-    die "invalid filename - $f\n"
-	if not $f =~ /\A(.*)\.(ape|cue)\z/i;
-    my ($ape_fname, $cue_fname) = ("$1.ape", "$1.cue");
+    my ($ape_fname, $cue_fname);
+    if ($f =~ /\A(.*)\.(ape|APE)\z/) {
+	$ape_fname = $f;
+	my $cue = ($2 eq "ape") ? ".cue" : ".CUE";
+	$cue_fname = (-e "$1$cue") ? "$1$cue" :
+	    (-e "$f$cue") ? "$f$cue" : "$1$cue";
+    } elsif ($f =~ /\A((.*)\.ape)\.cue\z/i) {
+	$cue_fname = $f;
+	$ape_fname = $1;
+    } elsif ($f =~ /\A(.*)\.(cue|CUE)\z/) {
+	$cue_fname = $f;
+	$ape_fname = $1.(($2 eq "cue") ? ".ape" : ".APE");
+    } else {
+	die "invalid filename - $f\n";
+    };
     foreach my $fname ($ape_fname, $cue_fname) {
 	die "$fname doesn't exist\n" if not -e $fname;
     };
