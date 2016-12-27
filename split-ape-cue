@@ -257,7 +257,7 @@ sub str_($) {
 sub def($$) {return (defined $_[0]) ? $_[0] : $_[1]};
 
 # Return $x converted to printable (locale-encoded) string.
-sub str($) {return def str($_[0]), "???"};
+sub str($) {return def str_($_[0]), "???"};
 
 sub split_track_titles($) {
     my ($dinfo) = @_;
