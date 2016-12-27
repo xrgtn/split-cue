@@ -396,12 +396,12 @@ sub write_cddb_disc_info_cache($) {
 	open my $cache_fh, ">", $cache_fname
 	    or die "Cannot create $cache_fname - $!\n";
 	defined $dinfo->{$_} and printf {$cache_fh} "%s=%s\n",
-		uc($_), $dinfo->{$_}
+		uc($_), encode("utf8", $dinfo->{$_})
 	    foreach qw(discid dtitle dyear dgenre);
 	for (my $i = 0; defined $dinfo->{ttitles}
 		and $i < scalar(@{$dinfo->{ttitles}}); $i++) {
 	    printf {$cache_fh} "TTITLE%i=%s\n", $i,
-		    $dinfo->{ttitles}->[$i]
+		    encode("utf8", $dinfo->{ttitles}->[$i])
 		if defined $dinfo->{ttitles}->[$i];
 	};
 	close $cache_fh;
@@ -426,9 +426,11 @@ sub read_cddb_disc_info_cache($) {
 	    open my $cache_fh, "<", $cache_fname
 		or die "Cannot open $cache_fname - $!\n";
 	    my $ci;
-	    /\A\s*([^=]*[^=\s])\s*=\s*([^\r\n]*\S)\s\z/
-		    and $ci->{lc($1)} = $2
-		while (<$cache_fh>);
+	    while (<$cache_fh>) {
+		$_ = decode("utf8", $_);
+		$ci->{lc($1)} = $2
+		    if /\A\s*([^=]*[^=\s])\s*=\s*([^\r\n]*\S)\s\z/;
+	    };
 	    close $cache_fh;
 	    defined $ci->{$_} and $dinfo->{$_} = $ci->{$_}
 		foreach qw(dtitle dyear dgenre);
