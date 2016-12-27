@@ -6,8 +6,8 @@ split-ape-cue reads track descriptions from a .cue file and looks for
 matching discs in CDDB database. It prompts user to select one disc and
 whether he/she wants to edit disc/tracks descriptions.
 
-After prompting it splits the .ape file to individual tracks and
-encodes them to .mp3 files.
+After the prompting split-ape-cue splits the .ape file to individual
+tracks and encodes them to .mp3 files.
 
 ID3 tags are created based upon the disc/tracks descriptions taken
 from the source, selected by user.
@@ -15,18 +15,21 @@ from the source, selected by user.
 ### CDDB operation
 
 By default split-ape-cue queries freedb.freedb.org server. It uses
-perl's CDDB library by Rocco Caputo to do that. CDDB queries can be
-disabled by "-d" option.
+perl CDDB library by Rocco Caputo to communicate with the server. On
+GNU/Debian Linux this library is provided by the "libcddb-perl"
+package.
+
+CDDB queries can be disabled by "-d" option.
 
 ### Editing disc/tracks descriptions
 
 If user wants to edit disc/tracks descriptions, he/she should answer
 "y" to the "edit?" prompt. Then he should provide information for disc
-genre, year, performer, title and track titles prompt. Each track title
-is processed in a special way: if it looks like "XXX / YYY", then "XXX"
-is the track performer and "YYY" is its title (it's a CDDB/xmcd
+genre, year, performer, title and track titles prompts. Each track
+title is processed in a special way: if it looks like "XXX / YYY", then
+"XXX" is the track performer and "YYY" is its title (it's a CDDB/xmcd
 "feature"). This way any track may have its own performer and this
-performer may differ from the disc performer. This is how CDDB records
+performer may differ from the disc one. This is how CDDB records
 for tribute, cover and Various Artists albums look. Because of this
 "_performer_ / _title_" splitting, it's impossible to have a slash
 surrounded by spaces in a track (or a performer) name, but
