@@ -145,7 +145,8 @@ sub parse_cue_ape($$) {
     my $c;
     my $t = "disc";
     while (<$cue_fd>) {
-	$_ = decode($loc_charenc, $_);
+	# XXX assume "utf8" encoding for .cue file data:
+	$_ = decode("utf8", $_);
 	if (/^\s*title\s+"(.*)"\s*$/i) {
 	    my $title = $1;
 	    $c->{$t}->{_title} = $title
