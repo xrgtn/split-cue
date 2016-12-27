@@ -47,7 +47,7 @@ song do contain spaces around slash - check [Super Black Market Clash]
 Wikipedia for a proof. With split-ape-cue you can put " / " both into
 track artist ("AD / BC") and title ("Justice Tonight / Kick It Over"):
 
-    Track 12 title [???]: AD // BC / Justice Tonight // Kick It Over
+    Track 12 title [Justice Tonight/Kick It Over]: AD // BC / Justice Tonight // Kick It Over
 
 It's possible to avoid any prompting when you pass "-n X" option to
 split-ape-cue. The "X" number after "-n" option indicates which disc
