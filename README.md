@@ -62,3 +62,33 @@ descriptions twice (or more).
 
 Cached data retrieval may be disabled by "-c" option (but cache writes
 may not).
+
+### Encoding
+
+split-ape-cue creates separate subdirectory in current directory and
+outputs resulting .mp3 files there. Output files would typically be
+named like this:
+
+    ./_year_ - _artist_ - _album_/01. _artist_ - _song1_.mp3
+    ./_year_ - _artist_ - _album_/02. _artist_ - _song2_.mp3
+    ...
+
+When the disc year, artist or album information isn't available in
+either .cue file or on CDDB server and user didn't care to provide it
+by editing the disc description, split-ape-cue uses name of the given
+.cue file as a basis for the output subdirectory. If a track title
+isn't available, the track will be named just "_nn_.mp3" where _nn_ it
+this track number.
+
+By default, split-ape-cue runs "lame" with "-V2" option, which produces
+VBR (Variable Bit Rate) mp3 file with quality level 2 (approximately
+190kbits).
+* "-b N" option causes split-ape-cue to produce CBR (Constant Bit Rate)
+  mp3 files with bitrate of Nkbits.
+* "-q L" option produces VBR files at quality level L (0-9).
+
+Disc year, artist, album, genre, track number, title and performer data
+are put into ID3v1 tag or ID3v1+ID3v2. The latter method is only used
+when separate track performer is specified in track info (typically
+on tribute, cover or Various Artists albums), and it uses --TPE2 tag to
+store album performer separately from track one.
