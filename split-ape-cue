@@ -251,13 +251,13 @@ sub get_choice_or_exit() {
 };
 
 sub str_($) {
-    return defined($_[0]) ? encode($loc_charenc, $_[0]) : $_[0];
+    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : undef;
 };
 
-sub def($$) {return (defined $_[0]) ? $_[0] : $_[1]};
-
 # Return $x converted to printable (locale-encoded) string.
-sub str($) {return def str($_[0]), "???"};
+sub str($) {
+    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : "???";
+};
 
 sub split_track_titles($) {
     my ($dinfo) = @_;
@@ -358,8 +358,7 @@ sub print_disc_info($$;$$) {
     printf "%3i. %s: %s, %04i - %s - %s\n",
 	$disc_no, $dinfo->{discid},
 	str(defined($dbgenre) ? $dbgenre : $dinfo->{dgenre}),
-	def($dinfo->{dyear}, "????"),
-	str($dinfo->{_performer}),
+	$dinfo->{dyear}, str($dinfo->{_performer}),
 	str($dinfo->{_title});
     if ($print_tracks and defined $dinfo->{_tracks}) {
 	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
