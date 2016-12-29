@@ -168,9 +168,9 @@ sub parse_cue_ape($$) {
 	    use integer;
 	    $c->{$t}->{$i} = {h=>$m / 60, m=>$m % 60, s=>$s};
 	    no integer;
-	    die "invalid number of seconds for track $t: $_"
+	    die "invalid number of seconds for track $t: ".str($_)
 		if $s > 59;
-	    die "invalid number of frames for track $t: $_"
+	    die "invalid number of frames for track $t: ".str($_)
 		if $f > 74;
 	    # Audio CDs supply position in the MSF format, i.e.
 	    # minutes:seconds.frame_no, with each frame holding
@@ -206,7 +206,7 @@ sub parse_cue_ape($$) {
     };
     close $cue_fd;
     # validate .cue data:
-    die "no tracks found in $cue_fname\n"
+    die "no tracks found in $cue_fname_\n"
 	if not exists $c->{disc}->{maxtrack};
     die "max track no != number of tracks\n"
 	if $c->{disc}->{maxtrack} != $c->{disc}->{tracks};
@@ -298,7 +298,7 @@ sub edit_disc_info($$) {
     if ($choice =~ /^\d{4}$/) {
 	$dinfo->{dyear} = $choice;
     } elsif ($choice ne "") {
-	die "Invalid disc year - $choice\n";
+	die "Invalid disc year - ".str($choice)."\n";
     } elsif (not defined $dinfo->{dyear}) {
 	die "Disc year is required\n";
     };
@@ -334,7 +334,7 @@ sub edit_disc_info($$) {
 	if ($choice ne "") {
 	    $dinfo->{ttitles}->[$t - 1] = $choice;
 	} elsif (not defined $tt) {
-	    die "Track ".(sprintf "%02i", $t)." $k is required\n";
+	    die sprintf "Track %02i %s is required\n", $t, $k;
 	};
     };
     # ttitles might have been edited, split them into _tracks anew:
@@ -380,7 +380,7 @@ sub write_cddb_disc_info_cache($) {
     # "genre" and "discid" fields are required:
     defined $dinfo->{$_} or die "Disc $_ not defined\n"
 	foreach qw(discid genre);
-    die "Invalid disc genre $dinfo->{genre}\n"
+    die "Invalid disc genre ".str($dinfo->{genre})."\n"
 	if $dinfo->{genre} !~ /\A[a-z_-]+\z/;
     # Find user's home directory:
     my $homedir = (defined $ENV{HOME} and $ENV{HOME} ne "") ?
@@ -391,12 +391,13 @@ sub write_cddb_disc_info_cache($) {
 	if not -d "$homedir/.cddb";
     # Create ~/.cddb/$genre subdirectory if it doesn't exist:
     mkdir "$homedir/.cddb/$dinfo->{genre}"
-	    or die "Cannot create ~/.cddb/$dinfo->{genre} - $!\n"
+	    or die "Cannot create ~/.cddb/".str($dinfo->{genre})
+		." - $!\n"
 	if not -d "$homedir/.cddb/$dinfo->{genre}";
     foreach my $discid (split /\s*,\s*/, $dinfo->{discid}) {
 	my $cache_fname = "$homedir/.cddb/$dinfo->{genre}/$discid";
 	open my $cache_fh, ">", $cache_fname
-	    or die "Cannot create $cache_fname - $!\n";
+	    or die "Cannot create ".str($cache_fname)." - $!\n";
 	defined $dinfo->{$_} and printf {$cache_fh} "%s=%s\n",
 		uc($_), encode("utf8", $dinfo->{$_})
 	    foreach qw(discid dtitle dyear dgenre);
@@ -416,7 +417,7 @@ sub read_cddb_disc_info_cache($) {
     # "genre" and "discid" fields are required:
     defined $dinfo->{$_} or die "Disc $_ not defined\n"
 	foreach qw(discid genre);
-    die "Invalid disc genre $dinfo->{genre}\n"
+    die "Invalid disc genre ".str($dinfo->{genre})."\n"
 	if $dinfo->{genre} !~ /\A[a-z_-]+\z/;
     # Find user's home directory:
     my $homedir = (defined $ENV{HOME} and $ENV{HOME} ne "") ?
@@ -426,7 +427,7 @@ sub read_cddb_disc_info_cache($) {
 	my $cache_fname = "$homedir/.cddb/$dinfo->{genre}/$discid";
 	if (-f $cache_fname or -l $cache_fname) {
 	    open my $cache_fh, "<", $cache_fname
-		or die "Cannot open $cache_fname - $!\n";
+		or die "Cannot open ".str($cache_fname)." - $!\n";
 	    my $ci;
 	    while (<$cache_fh>) {
 		$_ = decode("utf8", $_);
@@ -498,7 +499,7 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 	} elsif ($choice eq "") {
 	    $chosen_disc_no = 1;
 	} else {
-	    die "invalid disc data index - $choice\n";
+	    die "invalid disc data index - ".str($choice)."\n";
 	};
     } else {
 	$chosen_disc_no = (defined $opts->{n}) ? $opts->{n} : 0;
@@ -633,7 +634,7 @@ sub encode_tracks($$$$) {
 sub adjacent_files($) {
     my ($f) = @_;
     my $dn = ($f =~ m!\A(.*/)!) ? $1 : $f;
-    opendir(my $dh, $dn) or die "Cannot open $dn - $!\n";
+    opendir(my $dh, $dn) or die "Cannot open ".str($dn)." - $!\n";
     my @r = grep {$_ ne $f and -f $_ || -l $_}
 	map {$dn.decode($loc_charenc, $_)} readdir $dh;
     closedir $dh;
@@ -682,9 +683,9 @@ die "\"lame\" not found on this system\n"
     if system("lame --version >/dev/null 2>&1") != 0;
 use warnings;
 
-foreach my $f (@ARGV) {
-    my $cue_fname = decode($loc_charenc, $f);
-    die "$f doesn't exist\n" if not -e $cue_fname;
+foreach my $cue_fname_ (@ARGV) {
+    my $cue_fname = decode($loc_charenc, $cue_fname_);
+    die "$cue_fname_ doesn't exist\n" if not -e $cue_fname;
     my $ape_fname;
     foreach my $x (sort {
 	    my $r = lmatch($b, $cue_fname)
@@ -696,7 +697,7 @@ foreach my $f (@ARGV) {
 	    last;
 	};
     };
-    die "No .ape file found for $f\n" if not defined $ape_fname;
+    die "No .ape file found for $cue_fname_\n" if not defined $ape_fname;
     (my $cue_bname = $cue_fname) =~ s!\A.*/!!;
     (my $ape_bname = $ape_fname) =~ s!\A.*/!!;
     printf "Splitting  %s  +  %s\n", str($cue_bname), str($ape_bname);
