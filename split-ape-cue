@@ -628,6 +628,29 @@ sub encode_tracks($$$$) {
     };
 };
 
+# Return (locale-decoded) list of all other files/symlinks residing in
+# the same subdir as the given file.
+sub adjacent_files($) {
+    my ($f) = @_;
+    my $dn = ($f =~ m!\A(.*/)!) ? $1 : $f;
+    opendir(my $dh, $dn) or die "Cannot open $dn - $!\n";
+    my @r = grep {$_ ne $f and -f $_ || -l $_}
+	map {$dn.decode($loc_charenc, $_)} readdir $dh;
+    closedir $dh;
+    return @r;
+};
+
+# For the given 2 strings return number of matching characters at the
+# left.
+sub lmatch($$) {
+    my ($i, $s1, $s2) = (0, @_);
+    for (; $i < length($s1) and $i < length($s2); $i++) {
+	return $i if substr($s1, $i, 1) ne substr($s2, $i, 1);
+    };
+    return $i;
+};
+
+
 sub usage($) {
     print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
     print "  where opts are:\n";
@@ -660,25 +683,23 @@ die "\"lame\" not found on this system\n"
 use warnings;
 
 foreach my $f (@ARGV) {
-    $f = decode($loc_charenc, $f);
-    my ($ape_fname, $cue_fname);
-    if ($f =~ /\A(.*)\.(ape|APE)\z/) {
-	$ape_fname = $f;
-	my $cue = ($2 eq "ape") ? ".cue" : ".CUE";
-	$cue_fname = (-e "$1$cue") ? "$1$cue" :
-	    (-e "$f$cue") ? "$f$cue" : "$1$cue";
-    } elsif ($f =~ /\A((.*)\.ape)\.cue\z/i) {
-	$cue_fname = $f;
-	$ape_fname = $1;
-    } elsif ($f =~ /\A(.*)\.(cue|CUE)\z/) {
-	$cue_fname = $f;
-	$ape_fname = $1.(($2 eq "cue") ? ".ape" : ".APE");
-    } else {
-	die "invalid filename - $f\n";
+    my $cue_fname = decode($loc_charenc, $f);
+    die "$f doesn't exist\n" if not -e $cue_fname;
+    my $ape_fname;
+    foreach my $x (sort {
+	    my $r = lmatch($b, $cue_fname)
+		<=> lmatch($a, $cue_fname);
+	    return $r ? $r : $b cmp $a
+	} adjacent_files $cue_fname) {
+	if ($x =~ /\.ape/i) {
+	    $ape_fname = $x;
+	    last;
+	};
     };
-    foreach my $fname ($ape_fname, $cue_fname) {
-	die "$fname doesn't exist\n" if not -e $fname;
-    };
+    die "No .ape file found for $f\n" if not defined $ape_fname;
+    (my $cue_bname = $cue_fname) =~ s!\A.*/!!;
+    (my $ape_bname = $ape_fname) =~ s!\A.*/!!;
+    printf "Splitting  %s  +  %s\n", str($cue_bname), str($ape_bname);
     my $c = parse_cue_ape($cue_fname, $ape_fname);
     my $dinfo = get_and_edit_cue_and_cddb_data($c, $ape_fname, $opts);
     encode_tracks($c, $dinfo, $ape_fname, $opts);
