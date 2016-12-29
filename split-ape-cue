@@ -59,7 +59,7 @@ sub sum_digits_base_n($$) {
 sub get_cdimage_playtime($) {
     my ($cdimage_fname) = @_;
     my $cdimage_fname_ = encode($loc_charenc, $cdimage_fname);
-    my $ape_time;
+    my $cdimage_time;
     # fork child ffmpeg process:
     my $ffmpeg_pid = open my $ffmpeg_out, "-|";
     die "cannot fork: $!" if not defined $ffmpeg_pid;
@@ -75,14 +75,14 @@ sub get_cdimage_playtime($) {
 	    #  Duration: 00:46:25.43, start: 0.000000, ...
 	    if (/^\s*Duration:\s*(\d\d):(\d\d):(\d\d)
 	    \.\d+,/ix) {
-		$ape_time = ($1 * 60 + $2) * 60 + $3;
+		$cdimage_time = ($1 * 60 + $2) * 60 + $3;
 	    }
 	};
 	close $ffmpeg_out;
     };
     die "cannot detect playtime of $cdimage_fname_\n"
-	if not defined $ape_time;
-    return $ape_time;
+	if not defined $cdimage_time;
+    return $cdimage_time;
 };
 
 sub calculate_discid($$) {
@@ -98,11 +98,11 @@ sub calculate_discid($$) {
 	foreach @{$c->{disc}->{track_offsets}};
     no integer;
     # detect total play time of the disc:
-    $c->{disc}->{ape_time} = get_cdimage_playtime($ape_fname);
+    $c->{disc}->{cdimage_time} = get_cdimage_playtime($ape_fname);
     # calculate discid "hash" for CDDB server:
     $c->{disc}->{discid} = sprintf "%02x%04x%02x",
 	$c->{disc}->{offsum} % 255,
-	$c->{disc}->{ape_time},
+	$c->{disc}->{cdimage_time},
 	$c->{disc}->{tracks};
     printf "WARNING: discid_cue:%s != discid:%s\n",
 	    $c->{disc}->{discid_cue}, $c->{disc}->{discid}
@@ -471,11 +471,11 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 	# query CDDB server:
 	printf "Get  %s: %s %s...\n", $c->{disc}->{discid},
 	    join(" ", @{$c->{disc}->{track_offsets}}),
-	    $c->{disc}->{ape_time};
+	    $c->{disc}->{cdimage_time};
 	my @discs = $cddb->get_discs(
 	    $c->{disc}->{discid},
 	    $c->{disc}->{track_offsets},
-	    $c->{disc}->{ape_time}
+	    $c->{disc}->{cdimage_time}
 	);
 	# get detailed info for each CDDB disc:
 	foreach my $disc (@discs) {
