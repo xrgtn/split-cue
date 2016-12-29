@@ -545,7 +545,7 @@ sub encode_tracks($$$$) {
     } else {
 	$disc_dname_ = str $ape_fname;
 	$disc_dname_ = s/\A.*\///;
-	$disc_dname_ = s/\.ape\z//i;
+	$disc_dname_ = s/\.(ape|flac|wav)\z//i;
     };
     if (not -d $disc_dname_) {
 	mkdir $disc_dname_ or die "cannot mkdir $disc_dname_ - $!";
@@ -692,12 +692,13 @@ foreach my $cue_fname_ (@ARGV) {
 		<=> lmatch($a, $cue_fname);
 	    return $r ? $r : $b cmp $a
 	} adjacent_files $cue_fname) {
-	if ($x =~ /\.ape/i) {
+	if ($x =~ /\.(ape|flac|wav)/i) {
 	    $ape_fname = $x;
 	    last;
 	};
     };
-    die "No .ape file found for $cue_fname_\n" if not defined $ape_fname;
+    die "No .ape/.flac/.wav file found for $cue_fname_\n"
+	if not defined $ape_fname;
     (my $cue_bname = $cue_fname) =~ s!\A.*/!!;
     (my $ape_bname = $ape_fname) =~ s!\A.*/!!;
     printf "Splitting  %s  +  %s\n", str($cue_bname), str($ape_bname);
