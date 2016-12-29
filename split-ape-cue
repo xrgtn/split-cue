@@ -652,6 +652,13 @@ foreach my $o (qw(n)) {
 };
 usage(1) if not @ARGV or not $opts_ok;
 
+no warnings "exec";
+die "\"ffmpeg\" not found on this system\n"
+    if system("ffmpeg -version >/dev/null 2>&1") != 0;
+die "\"lame\" not found on this system\n"
+    if system("lame --version >/dev/null 2>&1") != 0;
+use warnings;
+
 foreach my $f (@ARGV) {
     $f = decode($loc_charenc, $f);
     my ($ape_fname, $cue_fname);
