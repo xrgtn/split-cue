@@ -33,6 +33,17 @@ sub get_loc_charenc() {
 # XXX : $loc_charenc is a global variable.
 my $loc_charenc = get_loc_charenc();
 
+# Return locale-encoded $x or undef.
+sub str_($) {
+    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : undef;
+};
+
+# Return $x converted to printable (locale-encoded) string.
+sub str($) {
+    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : "???";
+};
+
+
 sub sum_digits_base_n($$) {
     my ($x, $base) = @_;
     my $s = 0;
@@ -248,15 +259,6 @@ sub get_choice_or_exit() {
     $choice = decode($loc_charenc, $choice);
     chomp $choice;
     return $choice;
-};
-
-sub str_($) {
-    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : undef;
-};
-
-# Return $x converted to printable (locale-encoded) string.
-sub str($) {
-    return (defined $_[0]) ? encode($loc_charenc, $_[0]) : "???";
 };
 
 sub split_track_titles($) {
