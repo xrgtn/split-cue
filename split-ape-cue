@@ -55,10 +55,10 @@ sub sum_digits_base_n($$) {
     return $s;
 };
 
-# Return total play time of the .ape file in seconds (rounded down).
-sub get_ape_playtime($) {
-    my ($ape_fname) = @_;
-    my $ape_fname_ = encode($loc_charenc, $ape_fname);
+# Return total play time of the CD image in seconds (rounded down).
+sub get_cdimage_playtime($) {
+    my ($cdimage_fname) = @_;
+    my $cdimage_fname_ = encode($loc_charenc, $cdimage_fname);
     my $ape_time;
     # fork child ffmpeg process:
     my $ffmpeg_pid = open my $ffmpeg_out, "-|";
@@ -67,7 +67,7 @@ sub get_ape_playtime($) {
 	# child process
 	open STDERR, ">&STDOUT"
 	    or die "Cannot redirect STDERR to STDOUT: $!";
-	exec {"ffmpeg"} ("ffmpeg", "-i", $ape_fname_)
+	exec {"ffmpeg"} ("ffmpeg", "-i", $cdimage_fname_)
 	    or die "Cannot execute ffmpeg: $!";
     } else {
 	# parent process
@@ -80,7 +80,7 @@ sub get_ape_playtime($) {
 	};
 	close $ffmpeg_out;
     };
-    die "cannot detect playtime of $ape_fname_\n"
+    die "cannot detect playtime of $cdimage_fname_\n"
 	if not defined $ape_time;
     return $ape_time;
 };
@@ -98,7 +98,7 @@ sub calculate_discid($$) {
 	foreach @{$c->{disc}->{track_offsets}};
     no integer;
     # detect total play time of the disc:
-    $c->{disc}->{ape_time} = get_ape_playtime($ape_fname);
+    $c->{disc}->{ape_time} = get_cdimage_playtime($ape_fname);
     # calculate discid "hash" for CDDB server:
     $c->{disc}->{discid} = sprintf "%02x%04x%02x",
 	$c->{disc}->{offsum} % 255,
