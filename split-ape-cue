@@ -86,7 +86,7 @@ sub get_cdimage_playtime($) {
 };
 
 sub calculate_discid($$) {
-    my ($c, $ape_fname) = @_;
+    my ($c, $cdimage_fname) = @_;
     return if defined $c->{disc}->{discid};
     use integer;
     # XXX: track01 typically starts at 2 sec (150 frames) offset:
@@ -98,7 +98,7 @@ sub calculate_discid($$) {
 	foreach @{$c->{disc}->{track_offsets}};
     no integer;
     # detect total play time of the disc:
-    $c->{disc}->{cdimage_time} = get_cdimage_playtime($ape_fname);
+    $c->{disc}->{cdimage_time} = get_cdimage_playtime($cdimage_fname);
     # calculate discid "hash" for CDDB server:
     $c->{disc}->{discid} = sprintf "%02x%04x%02x",
 	$c->{disc}->{offsum} % 255,
@@ -136,7 +136,7 @@ sub put_together_dtitle($) {
     };
 };
 
-# Parse contents of the given .cue and .ape files.
+# Parse contents of the given .cue and CD image files.
 # Return hash:
 # {disc=>{discid_cue=>, dtitle=>, _performer=>, _title=>, dyear=>,
 #    dgenre=>, ttitles=>, tracks=>, maxtrack=>, discid=>...},
@@ -148,8 +148,8 @@ sub put_together_dtitle($) {
 #  2=>{...},
 #  ...
 # }
-sub parse_cue_ape($$) {
-    my ($cue_fname, $ape_fname) = @_;
+sub parse_cue_and_cdimage($$) {
+    my ($cue_fname, $cdimage_fname) = @_;
     my $cue_fname_ = encode($loc_charenc, $cue_fname);
     open (my $cue_fd, "<", $cue_fname_)
 	or die "cannot open $cue_fname_ - $!\n";
@@ -245,7 +245,7 @@ sub parse_cue_ape($$) {
 		: double_slashes $c->{$t}->{_title};
 	};
     };
-    calculate_discid($c, $ape_fname);
+    calculate_discid($c, $cdimage_fname);
     return $c;
 };
 
@@ -448,8 +448,8 @@ sub read_cddb_disc_info_cache($) {
     };
 };
 
-sub get_and_edit_cue_and_cddb_data($$;$) {
-    my ($c, $ape_fname, $opts) = @_;
+sub get_and_edit_cue_and_cddb_data($;$) {
+    my ($c, $opts) = @_;
     my (@dinfos, $chosen_disc_no);
     # Read cached data for .cue dinfo unless -c option is given:
     read_cddb_disc_info_cache($c->{disc}) if not $opts->{c};
@@ -529,7 +529,7 @@ sub get_and_edit_cue_and_cddb_data($$;$) {
 };
 
 sub encode_tracks($$$$) {
-    my ($c, $dinfo, $ape_fname, $opts) = @_;
+    my ($c, $dinfo, $cdimage_fname, $opts) = @_;
     my $dyear04 = (defined $dinfo->{dyear}) ?
 	(sprintf "%04i", $dinfo->{dyear}) : undef;
     my $dperformer_ = str_ $dinfo->{_performer};
@@ -545,7 +545,7 @@ sub encode_tracks($$$$) {
 	    if defined $dyear04;
 	$disc_dname_ =~ s!/!|!g;
     } else {
-	$disc_dname_ = str $ape_fname;
+	$disc_dname_ = str $cdimage_fname;
 	$disc_dname_ = s/\A.*\///;
 	$disc_dname_ = s/\.(ape|flac|wav)\z//i;
     };
@@ -573,7 +573,7 @@ sub encode_tracks($$$$) {
 	my ($track_wav_, $track_mp3_) = (
 	    "$disc_dname_/$track_base_.wav",
 	    "$disc_dname_/$track_base_.mp3");
-	my @ffmpeg = ("ffmpeg", "-i", $ape_fname,
+	my @ffmpeg = ("ffmpeg", "-i", $cdimage_fname,
 	    "-ss", (sprintf "%02i:%02i:%02i.%03i",
 		$c->{$t}->{index01}->{h},
 		$c->{$t}->{index01}->{m},
@@ -688,25 +688,26 @@ use warnings;
 foreach my $cue_fname_ (@ARGV) {
     my $cue_fname = decode($loc_charenc, $cue_fname_);
     die "$cue_fname_ doesn't exist\n" if not -e $cue_fname;
-    my $ape_fname;
+    my $cdimage_fname;
     foreach my $x (sort {
 	    my $r = lmatch($b, $cue_fname)
 		<=> lmatch($a, $cue_fname);
 	    return $r ? $r : $b cmp $a
 	} adjacent_files $cue_fname) {
 	if ($x =~ /\.(ape|flac|wav)/i) {
-	    $ape_fname = $x;
+	    $cdimage_fname = $x;
 	    last;
 	};
     };
     die "No .ape/.flac/.wav file found for $cue_fname_\n"
-	if not defined $ape_fname;
+	if not defined $cdimage_fname;
     (my $cue_bname = $cue_fname) =~ s!\A.*/!!;
-    (my $ape_bname = $ape_fname) =~ s!\A.*/!!;
-    printf "Splitting  %s  +  %s\n", str($cue_bname), str($ape_bname);
-    my $c = parse_cue_ape($cue_fname, $ape_fname);
-    my $dinfo = get_and_edit_cue_and_cddb_data($c, $ape_fname, $opts);
-    encode_tracks($c, $dinfo, $ape_fname, $opts);
+    (my $cdimage_bname = $cdimage_fname) =~ s!\A.*/!!;
+    printf "Splitting  %s  +  %s\n", str($cue_bname),
+	str($cdimage_bname);
+    my $c = parse_cue_and_cdimage($cue_fname, $cdimage_fname);
+    my $dinfo = get_and_edit_cue_and_cddb_data($c, $opts);
+    encode_tracks($c, $dinfo, $cdimage_fname, $opts);
 };
 
 # vi:set sw=4 noet ts=8 tw=71:
