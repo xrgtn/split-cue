@@ -232,17 +232,24 @@ sub parse_cue_and_cdimage($$) {
 	# generate CDDB_dinfo-style ttitles:
 	if ($c->{$t}->{type} eq "audio"
 		and defined $c->{$t}->{_title}) {
+	    $c->{disc}->{_tracks}->[$t - 1]->{_title}
+		= $c->{$t}->{_title};
 	    # .cue files do have separate PERFORMER entries for tracks,
 	    # even when all track performers are the same as the disc
 	    # performer:
-	    $c->{disc}->{ttitles}->[$t - 1] =
-		(defined($c->{$t}->{_performer}) and
-		    (not defined($c->{disc}->{_performer}) or
-			$c->{disc}->{_performer}
-			ne $c->{$t}->{_performer})) ?
-		double_slashes($c->{$t}->{_performer})
-		." / ".double_slashes($c->{$t}->{_title})
-		: double_slashes $c->{$t}->{_title};
+	    if (defined($c->{$t}->{_performer}) and
+		(not defined($c->{disc}->{_performer}) or
+		    $c->{disc}->{_performer}
+		    ne $c->{$t}->{_performer})) {
+		$c->{disc}->{ttitles}->[$t - 1] =
+		    double_slashes($c->{$t}->{_performer})
+		    ." / ".double_slashes($c->{$t}->{_title});
+		$c->{disc}->{_tracks}->[$t - 1]->{_performer}
+		    = $c->{$t}->{_performer};
+	    } else {
+		$c->{disc}->{ttitles}->[$t - 1] =
+		    double_slashes $c->{$t}->{_title};
+	    };
 	};
     };
     calculate_discid($c, $cdimage_fname);
