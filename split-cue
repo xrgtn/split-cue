@@ -89,16 +89,16 @@ sub calculate_discid($$) {
     my ($c, $cdimage_fname) = @_;
     return if defined $c->{disc}->{discid};
     use integer;
-    # XXX: track01 typically starts at 2 sec (150 frames) offset:
     @{$c->{disc}->{track_offsets}} =
-	map {150 + $c->{$_}->{index01}->{offs}}
+	map {$c->{$_}->{index01}->{offs}}
 	sort {$a <=> $b} grep {$_ ne "disc"} keys %$c;
     $c->{disc}->{offsum} = 0;
     $c->{disc}->{offsum} += sum_digits_base_n($_ / 75, 10)
 	foreach @{$c->{disc}->{track_offsets}};
     no integer;
     # detect total play time of the disc:
-    $c->{disc}->{cdimage_time} = get_cdimage_playtime($cdimage_fname);
+    $c->{disc}->{cdimage_time} = get_cdimage_playtime($cdimage_fname)
+	if not defined $c->{disc}->{cdimage_time};
     # calculate discid "hash" for CDDB server:
     $c->{disc}->{discid} = sprintf "%02x%04x%02x",
 	$c->{disc}->{offsum} % 255,
@@ -136,7 +136,223 @@ sub put_together_dtitle($) {
     };
 };
 
-# Parse contents of the given .cue and CD image files.
+sub parse_toc_and_cdimage($$) {
+    my ($toc_fname, $cdimage_fname) = @_;
+    my $toc_fname_ = encode($loc_charenc, $toc_fname);
+    my ($fh, $err_, $tsd, $c);
+
+    if (not open $fh, "<", $toc_fname_) {
+	$err_ = "Cannot open $toc_fname_ - $!\n";
+	goto ERR0;
+    };
+
+    # read .toc file contents:
+    my ($tochdrbuf, $tochdr, $r, $buf, $readsz, $tocbuf);
+    $r = sysread $fh, $tochdrbuf, 4;
+    if (not defined $r) {
+	$err_ = "Cannot read $toc_fname_ - $!\n";
+	goto ERR1;
+    } elsif ($r < 4) {
+	$err_ = "premature EOF\n";
+	goto ERR1;
+    };
+    ($tochdr->{sz}, $tochdr->{first_sess}, $tochdr->{last_sess}) =
+	unpack "S>CC", $tochdrbuf;
+    $readsz = 0;
+    $tocbuf = "";
+    while ($readsz < $tochdr->{sz}) {
+	$r = sysread $fh, $buf, $tochdr->{sz} - $readsz;
+	if (not defined $r) {
+	    $err_ = "Cannot read $toc_fname_ - $!\n";
+	    goto ERR1;
+	} elsif ($r == 0) {
+	    $err_ = "premature EOF\n";
+	    goto ERR1;
+	};
+	$tocbuf .= $buf;
+	$readsz += $r;
+    };
+    printf "TOC: %u bytes, %u session%s\n", $tochdr->{sz},
+	$tochdr->{last_sess} + 1 - $tochdr->{first_sess},
+	($tochdr->{last_sess} == $tochdr->{first_sess}) ? "" : "s";
+    close $fh;
+
+    # parse .toc file contents:
+    my $p = 0;
+    while ($p < $tochdr->{sz} - 11) {
+	my ($sn, $adrctl, $trk, $pt, $amin, $asec, $afrm, $res7,
+	    $pmin, $psec, $pfrm) = unpack "C[11]",
+		substr($tocbuf, $p, 11);
+	my $typ;
+	my $adr = $adrctl >> 4;
+	if ($adrctl & 0x04) {
+	    $typ = "data";
+	    $typ .= ",incr", if $adrctl & 0x01;
+	} else {
+	    if ($adrctl & 0x08) {
+		$typ = "quad-chan audio"
+	    } else {
+		$typ = "audio"
+	    };
+	    $typ .= ",emp", if $adrctl & 0x01;
+	};
+	$typ .= ",dcp", if $adrctl & 0x02;
+	$typ .= ",adr$adr", if $adr != 1;
+	$typ .= ",res$res7" if $res7;
+	$typ .= ",sess$sn" if $sn != 1;
+	$typ .= ",trk$trk" if $trk != 0;
+	$typ .= sprintf ",a%02u:%02u.%02u", $amin, $asec, $afrm
+	    if $amin | $asec | $afrm;
+	if ($pt == 0xA0) {
+	    # First track number:
+	    $tsd->{$trk}->{$sn}->{ftno} = $pmin;
+	    if ($psec == 0) {
+		# Disk Type: 0 = AUDIO/DATA
+		$typ .= ",cdda/data";
+	    } elsif ($psec == 0x10) {
+		# Disk Type: 0x20 = XA mode 2
+		$typ .= ",cdi";
+	    } elsif ($psec == 0x20) {
+		# Disk Type: 0x20 = XA mode 2
+		$typ .= ",cd-xa mode 2";
+	    };
+	    printf "%02X. %02u:%02u.%02u, %s\n",
+		$pt, $pmin, $psec, $pfrm, $typ;
+	} elsif ($pt == 0xA1) {
+	    # Last track number:
+	    $tsd->{$trk}->{$sn}->{ltno} = $pmin;
+	    printf "%02X. %02u:%02u.%02u, %s\n",
+		$pt, $pmin, $psec, $pfrm, $typ;
+	} elsif ($pt == 0xA2) {
+	    # Lead-out for the current session:
+	    $tsd->{$trk}->{$sn}->{lout} = {m=>$pmin, s=>$psec,
+		f=>$pfrm, t=>$typ};
+	} elsif (1 <= $pt and $pt <= 99) {
+	    if ($psec > 59) {
+		$err_ = "Invalid number of seconds for track"
+		    ." $pt: $psec\n";
+		goto ERR0;
+	    };
+	    if ($pfrm > 74) {
+		$err_ = "Invalid number of frames for track"
+		    ." $pt: $pfrm\n";
+		goto ERR0;
+	    };
+	    if (defined $tsd->{$trk}->{$sn}->{ftno}
+		    and defined $tsd->{$trk}->{$sn}->{ltno}
+		    and $pt == $tsd->{$trk}->{$sn}->{ftno}) {
+		if ($tsd->{$trk}->{$sn}->{ftno} ==
+			$tsd->{$trk}->{$sn}->{ltno}) {
+		    printf "Session %u - track %02u:\n",
+			$sn, $tsd->{$trk}->{$sn}->{ftno};
+		} else {
+		    printf "Session %u - tracks %02u-%02u:\n",
+			$sn, $tsd->{$trk}->{$sn}->{ftno},
+			$tsd->{$trk}->{$sn}->{ltno}
+		};
+	    };
+	    $tsd->{$trk}->{$sn}->{$pt} = {m=>$pmin, s=>$psec,
+		f=>$pfrm, t=>$typ};
+	    printf "%02u. %02u:%02u.%02u, %s\n",
+		$pt, $pmin, $psec, $pfrm, $typ;
+	    printf "LO. %02u:%02u.%02u, %s\n",
+		    $tsd->{$trk}->{$sn}->{lout}->{m},
+		    $tsd->{$trk}->{$sn}->{lout}->{s},
+		    $tsd->{$trk}->{$sn}->{lout}->{f},
+		    $tsd->{$trk}->{$sn}->{lout}->{t}
+		if defined $tsd->{$trk}->{$sn}->{lout}
+		    and defined $tsd->{$trk}->{$sn}->{ltno}
+		    and $pt == $tsd->{$trk}->{$sn}->{ltno};
+	} else {
+	    printf "%02X. %02u:%02u.%02u, %s\n",
+		$pt, $pmin, $psec, $pfrm, $typ;
+	};
+	$p += 11;
+    };
+    if ($p < $tochdr->{sz}) {
+	printf "TOC trailing bytes: %s\n", join(" ",
+	    map {sprintf "%02X", $_}
+	    unpack ("C*", substr($tocbuf, $p, $tochdr->{sz} - $p)));
+    };
+    # generate $c hash:
+    foreach my $T (keys %$tsd) {
+	foreach my $s (keys %{$tsd->{$T}}) {
+	    foreach my $t (grep {/^\d+$/} keys %{$tsd->{$T}->{$s}}) {
+		my $tmsfto = $tsd->{$T}->{$s}->{$t};
+		if (not exists $c->{$t}) {
+		    # add new track number to total and max:
+		    if (not exists $c->{disc}->{tracks}) {
+			$c->{disc}->{tracks} = 1;
+		    } else {
+			$c->{disc}->{tracks}++;
+		    };
+		    $c->{disc}->{maxtrack} = $t
+			if not exists $c->{disc}->{maxtrack}
+			    or $t > $c->{disc}->{maxtrack};
+		};
+		$c->{$t}->{type} = ($tmsfto->{t} =~ /^audio\b/i) ?
+		    "audio" : $tmsfto->{t};
+		use integer;
+		$c->{$t}->{index01} = {h=>$tmsfto->{m} / 60,
+		    m=>$tmsfto->{m} % 60, s=>$tmsfto->{s},
+		    ms_floor=>1000 * $tmsfto->{f} / 75,
+		    ms_ceil=>(1000 * $tmsfto->{f} + 74) / 75,
+		    offs=>($tmsfto->{m} * 60 + $tmsfto->{s}) * 75
+		    + $tmsfto->{f}};
+		no integer;
+		if (not defined $c->{disc}->{minoffs}
+			or $c->{$t}->{index01}->{offs}
+			< $c->{disc}->{minoffs}) {
+		    $c->{disc}->{minoffs} =
+			$c->{$t}->{index01}->{offs};
+		};
+		if (not defined $tsd->{$T}->{$s}->{$t + 1}) {
+		    if (not defined $tsd->{$T}->{$s}->{lout}) {
+			$err_ = "No lead-out for session $s\n";
+			goto ERR1;
+		    };
+		    $c->{$t}->{endoffs} =
+			($tsd->{$T}->{$s}->{lout}->{m} * 60
+			+ $tsd->{$T}->{$s}->{lout}->{s}) * 75
+			+ $tsd->{$T}->{$s}->{lout}->{f};
+		    if (not defined $c->{disc}->{maxoffs}
+			    or $c->{$t}->{endoffs}
+			    > $c->{disc}->{maxoffs}) {
+			$c->{disc}->{maxoffs} = $c->{$t}->{endoffs};
+		    };
+		};
+	    };
+	};
+    };
+    if (not defined $c->{disc}->{maxtrack}
+	    or not defined $c->{disc}->{tracks}
+	    or not defined $c->{disc}->{minoffs}) {
+	$err_ = "No tracks found in $toc_fname_\n";
+	goto ERR0;
+    };
+    if ($c->{disc}->{maxtrack} != $c->{disc}->{tracks}) {
+	$err_ = "Max track no != number of tracks in $toc_fname_\n";
+	goto ERR0;
+    };
+    if (not defined $c->{disc}->{maxoffs}) {
+	$err_ = "No lead-out defined in $toc_fname_\n";
+	goto ERR0;
+    };
+    use integer;
+    $c->{disc}->{cdimage_time} = ($c->{disc}->{maxoffs}
+	- $c->{disc}->{minoffs}) / 75;
+    no integer;
+    # use "toc" as CDDB genre (NOT dgenre):
+    $c->{disc}->{genre} = "toc";
+    calculate_discid($c, $cdimage_fname);
+    return $c;
+ERR1:
+    close $fh;
+ERR0:
+    die $err_;
+};
+
+# Parse contents of the given .cue/.toc and CD image files.
 # Return hash:
 # {disc=>{discid_cue=>, dtitle=>, _performer=>, _title=>, dyear=>,
 #    dgenre=>, ttitles=>, tracks=>, maxtrack=>, discid=>...},
@@ -192,8 +408,9 @@ sub parse_cue_and_cdimage($$) {
 	    use integer;
 	    $c->{$t}->{$i}->{ms_floor} = 1000 * $f / 75;
 	    $c->{$t}->{$i}->{ms_ceil} = (1000 * $f + 74) / 75;
-	    # Track offset in frames:
-	    $c->{$t}->{$i}->{offs} = ($m * 60 + $s) * 75 + $f;
+	    # Track offset in frames (XXX track01 typically starts at
+	    # 2 sec offset (150 frames)):
+	    $c->{$t}->{$i}->{offs} = ($m * 60 + $s) * 75 + $f + 150;
 	} elsif (/^\s*track\s+(\d+)\s+([^\r\n]*\S)\s*$/i) {
 	    $t = 0 + $1;
 	    die "invalid track number - $t\n" if $t < 1;
@@ -554,7 +771,7 @@ sub encode_tracks($$$$) {
     } else {
 	$disc_dname_ = str $cdimage_fname;
 	$disc_dname_ = s/\A.*\///;
-	$disc_dname_ = s/\.(ape|flac|wav)\z//i;
+	$disc_dname_ = s/\.(ape|flac|wav|clone)\z//i;
     };
     if (not -d $disc_dname_) {
 	mkdir $disc_dname_ or die "cannot mkdir $disc_dname_ - $!";
@@ -701,18 +918,23 @@ foreach my $cue_fname_ (@ARGV) {
 		<=> lmatch($a, $cue_fname);
 	    return $r ? $r : $b cmp $a
 	} adjacent_files $cue_fname) {
-	if ($x =~ /\.(ape|flac|wav)/i) {
+	if ($x =~ /\.(ape|flac|wav|clone)\z/i) {
 	    $cdimage_fname = $x;
 	    last;
 	};
     };
-    die "No .ape/.flac/.wav file found for $cue_fname_\n"
+    die "No .ape/.flac/.wav/.clone file found for $cue_fname_\n"
 	if not defined $cdimage_fname;
     (my $cue_bname = $cue_fname) =~ s!\A.*/!!;
     (my $cdimage_bname = $cdimage_fname) =~ s!\A.*/!!;
     printf "Splitting  %s  +  %s\n", str($cue_bname),
 	str($cdimage_bname);
-    my $c = parse_cue_and_cdimage($cue_fname, $cdimage_fname);
+    my $c;
+    if ($cue_fname =~ /\.toc\z/i) {
+	$c = parse_toc_and_cdimage $cue_fname, $cdimage_fname;
+    } else {
+	$c = parse_cue_and_cdimage $cue_fname, $cdimage_fname;
+    };
     my $dinfo = get_and_edit_cue_and_cddb_data($c, $opts);
     encode_tracks($c, $dinfo, $cdimage_fname, $opts);
 };
