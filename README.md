@@ -1,8 +1,8 @@
 # split-cue
 
-Split audio CD image + cuesheet to .mp3 tracks.
+Split audio CD image + cuesheet/toc to .mp3 tracks.
 
-split-cue reads track descriptions from a .cue file and looks for
+split-cue reads track descriptions from a .cue/.toc file and looks for
 matching discs in CDDB database. It prompts user to select one disc and
 whether he/she wants to edit disc/tracks descriptions.
 
@@ -16,8 +16,9 @@ from the source, selected by user.
 
 split-cue needs perl5, ffmpeg, lame (and optionally perl CDDB library)
 to operate. Basically it can read CD images in any format that ffmpeg
-can understand, this means .ape, .flac and .wav at the minimum.
-Currently it produces .mp3 files on output, but adding support for
+can understand, this means .ape, .flac and .wav at the minimum. It can
+also read .clone files produced by readom/readcd utils from cdrkit.
+Currently it generates .mp3 files on output, but adding support for
 .ogg, .flac, .wav and others is on my TODO list.
 
 ### CDDB operation
