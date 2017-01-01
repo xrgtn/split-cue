@@ -770,9 +770,7 @@ sub extract_wav_from_clone_image($$$$) {
     my $wav_fname_ = encode($loc_charenc, $wav_fname);
     my $err_;
 
-    my $startoffs = $c->{$t}->{index01}->{offs}
-	- (defined($c->{disc}->{minoffs}) ?
-	$c->{disc}->{minoffs} : 150);
+    my $startoffs = $c->{$t}->{index01}->{offs};
     my $endoffs = (defined $c->{$t}->{endoffs}) ?
 	$c->{$t}->{endoffs} :
 	(defined $c->{$t + 1}->{index00}) ?
@@ -784,6 +782,10 @@ sub extract_wav_from_clone_image($$$$) {
 	$endoffs = $startoffs + 1 if $endoffs <= $startoffs;
 	no integer;
     };
+    my $offs1 = (defined($c->{disc}->{minoffs}) ?
+	$c->{disc}->{minoffs} : 150);
+    $startoffs -= $offs1;
+    $endoffs -= $offs1;
 
     my ($clone_fh, $wav_fh, $r);
 
