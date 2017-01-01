@@ -951,7 +951,7 @@ sub encode_tracks($$$$) {
 	} else {
 	    push @lame, "-V2";
 	};
-	my $v2only = 0;
+	my ($v2tags, $v2only) = (0, 0);
 	push @lame, "--ty", $dyear04 if defined $dyear04;
 	push @lame, "--tl", $dtitle_ if defined $dtitle_;
 	push @lame, "--tt", $ttitle_ if defined $ttitle_;
@@ -962,10 +962,13 @@ sub encode_tracks($$$$) {
 	    $v2only = 1 if length($_) > 30;
 	};
 	if (defined $dinfo->{_tracks}->[$t - 1]->{_performer}
-		and defined $dperformer_ or $v2only) {
+		and defined $dperformer_) {
 	    push @lame, "--tv", "TPE2=$dperformer_";
-	    push @lame, "--id3v2-only" if $v2only;
-	} else {
+	    $v2tags = 1;
+	};
+	if ($v2only) {
+	    push @lame, "--id3v2-only";
+	} elsif (not $v2tags) {
 	    push @lame, "--id3v1-only";
 	};
 	push @lame, $track_wav_, $track_mp3_;
