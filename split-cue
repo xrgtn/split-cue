@@ -136,6 +136,15 @@ sub put_together_dtitle($) {
     };
 };
 
+# Parse contents of the given .toc and CD image files.
+# Return hash:
+# {disc=>{tracks=>, maxtrack=>, minoffs=>, maxoffs=>, cdimage_time=>,
+#  discid=>, genre=>"toc", ...},
+#  1=>{type=>, index01=>{h=>, m=>, s=>, ms_ceil=>, ms_floor=>,
+#      offs=>, [endoffs=>...]}},
+#  2=>{...},
+#  ...
+# }
 sub parse_toc_and_cdimage($$) {
     my ($toc_fname, $cdimage_fname) = @_;
     my $toc_fname_ = encode($loc_charenc, $toc_fname);
@@ -352,10 +361,11 @@ ERR0:
     die $err_;
 };
 
-# Parse contents of the given .cue/.toc and CD image files.
+# Parse contents of the given .cue and CD image files.
 # Return hash:
 # {disc=>{discid_cue=>, dtitle=>, _performer=>, _title=>, dyear=>,
-#    dgenre=>, ttitles=>, tracks=>, maxtrack=>, discid=>...},
+#    dgenre=>, ttitles=>, tracks=>, maxtrack=>, cdimage_time=>,
+#    discid=>, genre=>"cue", ...},
 #  1=>{type=>, _performer=>, _title=>,
 #   [index00=>{...},] - "pre-gap" index if available
 #    index01=>{h=>, m=>, s=>, ms_ceil=>, ms_floor=>, offs=>...},
@@ -752,6 +762,104 @@ sub get_and_edit_cue_and_cddb_data($;$) {
     return $dinfos[$chosen_disc_no];
 };
 
+sub extract_wav_from_clone_image($$$$) {
+    my ($c, $t, $clone_fname, $wav_fname) = @_;
+    my $clone_fname_ = encode($loc_charenc, $clone_fname);
+    my $wav_fname_ = encode($loc_charenc, $wav_fname);
+    my $err_;
+
+    my $startoffs = $c->{$t}->{index01}->{offs}
+	- (defined($c->{disc}->{minoffs}) ?
+	$c->{disc}->{minoffs} : 150);
+    my $endoffs = (defined $c->{$t}->{endoffs}) ?
+	$c->{$t}->{endoffs} :
+	(defined $c->{$t + 1}->{index00}) ?
+	$c->{$t + 1}->{index00}->{offs} :
+	$c->{$t + 1}->{index01}->{offs};
+    if (not defined $endoffs) {
+	use integer;
+	$endoffs = (-S $clone_fname) / 2448;
+	$endoffs = $startoffs + 1 if $endoffs <= $startoffs;
+	no integer;
+    };
+
+    my ($clone_fh, $wav_fh, $r);
+
+    if (not open $clone_fh, "<", $clone_fname_) {
+	$err_ = "Cannot open $clone_fname_ - $!\n";
+	goto ERR0;
+    };
+    if (not open $wav_fh, ">", $wav_fname_) {
+	$err_ = "Cannot open $wav_fname_ - $!\n";
+	goto ERR1;
+    };
+    if (not seek $clone_fh, $startoffs * 2448, 0) {
+	$err_ = "Cannot seek to sector $startoffs - $!\n";
+	goto ERR2;
+    };
+
+    my $sndsz = ($endoffs - $startoffs) * 2448;
+    print "read sectors $startoffs-$endoffs, $sndsz bytes\n";
+    my $wavhdr_ = pack "a[4]L<a[4]a[4]L<SSLLSSa[4]L",
+	"RIFF", 20 + $sndsz,	# RIFF header
+	"WAVE",			# WAVE magic
+	"fmt ", 16,		# fmt header
+	1,			# format (PCM16LE?)
+	2,			# number of channels
+	44100,			# sample rate
+	44100*4,		# bytes per second
+	2,			# block align
+	16,			# bits per sample
+	"data", $sndsz;		# data header
+    my $rbuf_ = "";		# read buffer
+    my $rsz = 0;		# rbuf_ size
+    my $rtotal = 0;		# total read
+    my $wbuf_ = $wavhdr_;	# write buffer
+    my $wsz = length($wbuf_);	# size of wbuf_
+    print "WAV header: $wsz bytes\n";
+    while ($rtotal < $sndsz or $wsz > 0) {
+	while ($rsz < 2448) {
+	    my $buf_;
+	    my $r = sysread $clone_fh, $buf_,
+		($sndsz - $rtotal < 65536) ? $sndsz - $rtotal : 65536;
+	    if (not defined $r) {
+		$err_ = "Cannot read $clone_fname_ - $!\n";
+		goto ERR2;
+	    } elsif ($r == 0) {
+		$err_ = "Premature EOF in $clone_fname_\n";
+		goto ERR2;
+	    };
+	    $rbuf_ .= $buf_;
+	    $rsz += $r;
+	    $rtotal += $r;
+	};
+	while ($rsz >= 2448) {
+	    $wbuf_ .= pack("S<[1176]", unpack("S<[1176]", $rbuf_));
+	    $wsz += 2352;
+	    $rbuf_ = substr $rbuf_, 2448;
+	    $rsz -= 2448;
+	};
+	while ($wsz > 0) {
+	    my $r = syswrite $wav_fh, $wbuf_, $wsz;
+	    if (not defined $r) {
+		$err_ = "Cannot write $wav_fname_ - $!\n";
+		goto ERR2;
+	    };
+	    $wbuf_ = substr $wbuf_, $r;
+	    $wsz -= $r;
+	};
+    };
+    close $wav_fh;
+    close $clone_fh;
+    return 1;
+ERR2:
+    close $wav_fh;
+ERR1:
+    close $clone_fh;
+ERR0:
+    die $err_;
+};
+
 sub encode_tracks($$$$) {
     my ($c, $dinfo, $cdimage_fname, $opts) = @_;
     my $dyear04 = (defined $dinfo->{dyear}) ?
@@ -797,35 +905,41 @@ sub encode_tracks($$$$) {
 	my ($track_wav_, $track_mp3_) = (
 	    "$disc_dname_/$track_base_.wav",
 	    "$disc_dname_/$track_base_.mp3");
-	my @ffmpeg = ("ffmpeg", "-i", $cdimage_fname,
-	    "-ss", (sprintf "%02i:%02i:%02i.%03i",
-		$c->{$t}->{index01}->{h},
-		$c->{$t}->{index01}->{m},
-		$c->{$t}->{index01}->{s},
-		$c->{$t}->{index01}->{ms_ceil}));
-	if (exists $c->{$t + 1}) {
-	    my $i = exists $c->{$t + 1}->{index00} ? "index00"
-		: "index01";
-	    push @ffmpeg, "-to";
-	    push @ffmpeg, (sprintf "%02i:%02i:%02i.%03i",
-		$c->{$t + 1}->{$i}->{h},
-		$c->{$t + 1}->{$i}->{m},
-		$c->{$t + 1}->{$i}->{s},
-		$c->{$t + 1}->{$i}->{ms_floor});
+	my $r;
+	if ($cdimage_fname =~ /\.clone\z/i) {
+	    extract_wav_from_clone_image $c, $t, $cdimage_fname,
+		decode($loc_charenc, $track_wav_);
+	} else {
+	    my @ffmpeg = ("ffmpeg", "-i", $cdimage_fname,
+		"-ss", (sprintf "%02i:%02i:%02i.%03i",
+		    $c->{$t}->{index01}->{h},
+		    $c->{$t}->{index01}->{m},
+		    $c->{$t}->{index01}->{s},
+		    $c->{$t}->{index01}->{ms_ceil}));
+	    if (exists $c->{$t + 1}) {
+		my $i = exists $c->{$t + 1}->{index00} ? "index00"
+		    : "index01";
+		push @ffmpeg, "-to";
+		push @ffmpeg, (sprintf "%02i:%02i:%02i.%03i",
+		    $c->{$t + 1}->{$i}->{h},
+		    $c->{$t + 1}->{$i}->{m},
+		    $c->{$t + 1}->{$i}->{s},
+		    $c->{$t + 1}->{$i}->{ms_floor});
+	    };
+	    # push @ffmpeg, "-metadata", "date=$dyear04";
+	    # push @ffmpeg, "-metadata", "album=$dtitle_";
+	    # push @ffmpeg, "-metadata", "genre=$dgenre_";
+	    # push @ffmpeg, "-metadata", "track=$t02";
+	    # push @ffmpeg, "-metadata", "artist=$tperformer_";
+	    # push @ffmpeg, "-metadata", "title=$ttitle_";
+	    # push @ffmpeg, "-metadata", "albumartist=$dperformer_"
+	    #    if defined $dinfo->{_tracks}->[$t - 1]->{_performer};
+	    push @ffmpeg, ("-y", $track_wav_);
+	    print join(" ", @ffmpeg)."\n";
+	    $r = system {$ffmpeg[0]} @ffmpeg;
+	    die "ffmpeg error - $!\n" if $r < 0;
+	    die "ffmpeg error $?\n" if $r != 0;
 	};
-	# push @ffmpeg, "-metadata", "date=$dyear04";
-	# push @ffmpeg, "-metadata", "album=$dtitle_";
-	# push @ffmpeg, "-metadata", "genre=$dgenre_";
-	# push @ffmpeg, "-metadata", "track=$t02";
-	# push @ffmpeg, "-metadata", "artist=$tperformer_";
-	# push @ffmpeg, "-metadata", "title=$ttitle_";
-	# push @ffmpeg, "-metadata", "albumartist=$dperformer_"
-	#    if defined $dinfo->{_tracks}->[$t - 1]->{_performer};
-	push @ffmpeg, ("-y", $track_wav_);
-	print join(" ", @ffmpeg)."\n";
-	my $r = system {$ffmpeg[0]} @ffmpeg;
-	die "ffmpeg error - $!\n" if $r < 0;
-	die "ffmpeg error $?\n" if $r != 0;
 	my @lame = ("lame", "--tn", $t);
 	# Add bitrate/quality options:
 	if (defined $opts->{q}) {
