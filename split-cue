@@ -506,6 +506,7 @@ sub split_track_titles($) {
 		    $dinfo->{_tracks}->[$i]->{_title} =
 			halve_slashes $2;
 		} else {
+		    undef $dinfo->{_tracks}->[$i]->{_performer};
 		    $dinfo->{_tracks}->[$i]->{_title} =
 			halve_slashes $dinfo->{ttitles}->[$i];
 		};
@@ -584,6 +585,7 @@ sub split_dtitle($) {
 	    $dinfo->{_performer} = halve_slashes $1;
 	    $dinfo->{_title} = halve_slashes $2;
 	} else {
+	    undef $dinfo->{_performer};
 	    $dinfo->{_title} = halve_slashes $dinfo->{dtitle};
 	};
     };
@@ -949,14 +951,20 @@ sub encode_tracks($$$$) {
 	} else {
 	    push @lame, "-V2";
 	};
+	my $v2only = 0;
 	push @lame, "--ty", $dyear04 if defined $dyear04;
 	push @lame, "--tl", $dtitle_ if defined $dtitle_;
 	push @lame, "--tt", $ttitle_ if defined $ttitle_;
 	push @lame, "--tg", $dgenre_ if defined $dgenre_;
 	push @lame, "--ta", $tperformer_ if defined $tperformer_;
+	foreach (($dyear04, $dtitle_, $ttitle_, $dgenre_,
+		$tperformer_)) {
+	    $v2only = 1 if length($_) > 30;
+	};
 	if (defined $dinfo->{_tracks}->[$t - 1]->{_performer}
-		and defined $dperformer_) {
+		and defined $dperformer_ or $v2only) {
 	    push @lame, "--tv", "TPE2=$dperformer_";
+	    push @lame, "--id3v2-only" if $v2only;
 	} else {
 	    push @lame, "--id3v1-only";
 	};
@@ -973,8 +981,9 @@ sub encode_tracks($$$$) {
 # the same subdir as the given file.
 sub adjacent_files($) {
     my ($f) = @_;
-    my $dn = ($f =~ m!\A(.*/)!) ? $1 : $f;
-    opendir(my $dh, $dn) or die "Cannot open ".str($dn)." - $!\n";
+    my $dn = ($f =~ m!\A(.*/)!) ? $1 : "";
+    my $dn2 = ($dn eq "") ? "./" : $dn;
+    opendir(my $dh, $dn2) or die "Cannot open ".str($dn2)." - $!\n";
     my @r = grep {$_ ne $f and -f $_ || -l $_}
 	map {$dn.decode($loc_charenc, $_)} readdir $dh;
     closedir $dh;
