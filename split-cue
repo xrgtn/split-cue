@@ -1081,14 +1081,12 @@ sub version($) {
 # Parse options:
 my $opts = {};
 my $opts_ok = getopts("b:cdi:n:o:q:v", $opts);
-foreach my $o (qw(b q)) {
-    die "Invalid \"-$o $opts->{$o}\" option value\n"
-	if defined $opts->{$o} and $opts->{$o} !~ /\A\d+\z/;
-};
-foreach my $o (qw(n)) {
-    die "Invalid \"-$o $opts->{$o}\" option value\n"
-	if defined $opts->{$o} and $opts->{$o} !~ /\A-?\d+\z/;
-};
+die "Invalid \"-b $opts->{b}\" option value\n"
+    if defined $opts->{b} and $opts->{b} !~ /\A\d+\z/;
+die "Invalid \"-n $opts->{n}\" option value\n"
+    if defined $opts->{n} and $opts->{n} !~ /\A-?\d+\z/;
+die "Invalid \"-q $opts->{q}\" option value\n"
+    if defined $opts->{q} and $opts->{q} !~ /\A-?\d+(\.\d+)?\z/;
 $opts->{o} = (defined $opts->{o}) ?
     decode($loc_charenc, $opts->{o}) : "mp3";
 usage(1) if not $opts_ok;
