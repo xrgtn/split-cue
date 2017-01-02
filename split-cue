@@ -802,8 +802,8 @@ sub extract_wav_from_clone_image($$$$) {
 	goto ERR2;
     };
 
-    my $sndsz = ($endoffs - $startoffs) * 2448;
-    print "read sectors $startoffs-$endoffs, $sndsz bytes\n";
+    my $sndsz = ($endoffs - $startoffs) * 2352;
+    print "Extract sectors $startoffs-$endoffs, $sndsz bytes\n";
     my $wavhdr_ = pack "a[4]L<a[4]a[4]L<SSLLSSa[4]L",
 	"RIFF", 20 + $sndsz,	# RIFF header
 	"WAVE",			# WAVE magic
@@ -812,20 +812,19 @@ sub extract_wav_from_clone_image($$$$) {
 	2,			# number of channels
 	44100,			# sample rate
 	44100*4,		# bytes per second
-	2,			# block align
+	4,			# block align
 	16,			# bits per sample
 	"data", $sndsz;		# data header
     my $rbuf_ = "";		# read buffer
     my $rsz = 0;		# rbuf_ size
-    my $rtotal = 0;		# total read
+    my $total2r = ($endoffs - $startoffs) * 2448;  # total to read
     my $wbuf_ = $wavhdr_;	# write buffer
     my $wsz = length($wbuf_);	# size of wbuf_
-    print "WAV header: $wsz bytes\n";
-    while ($rtotal < $sndsz or $wsz > 0) {
+    while ($total2r > 0 or $wsz > 0) {
 	while ($rsz < 2448) {
 	    my $buf_;
 	    my $r = sysread $clone_fh, $buf_,
-		($sndsz - $rtotal < 65536) ? $sndsz - $rtotal : 65536;
+		($total2r < 65536) ? $total2r : 65536;
 	    if (not defined $r) {
 		$err_ = "Cannot read $clone_fname_ - $!\n";
 		goto ERR2;
@@ -835,7 +834,7 @@ sub extract_wav_from_clone_image($$$$) {
 	    };
 	    $rbuf_ .= $buf_;
 	    $rsz += $r;
-	    $rtotal += $r;
+	    $total2r -= $r;
 	};
 	while ($rsz >= 2448) {
 	    $wbuf_ .= pack("S<[1176]", unpack("S<[1176]", $rbuf_));
@@ -906,10 +905,12 @@ sub encode_tracks($$$$) {
 	    $track_base_ = $t02;
 	};
 	$track_base_ =~ s!/!|!g;
-	my ($track_wav_, $track_mp3_) = (
-	    "$disc_dname_/$track_base_.wav",
-	    "$disc_dname_/$track_base_.mp3");
+	my ($track_wav_, $track_out_) = (
+	    "$disc_dname_/$track_base_.".str(
+		($opts->{o} =~ /\Awav\z/i) ? $opts->{o} : "wav"),
+	    "$disc_dname_/$track_base_.".str($opts->{o}));
 	my $r;
+	# extract .wav track:
 	if ($cdimage_fname =~ /\.clone\z/i) {
 	    extract_wav_from_clone_image $c, $t, $cdimage_fname,
 		decode($loc_charenc, $track_wav_);
@@ -944,41 +945,94 @@ sub encode_tracks($$$$) {
 	    die "ffmpeg error - $!\n" if $r < 0;
 	    die "ffmpeg error $?\n" if $r != 0;
 	};
-	my @lame = ("lame", "--tn", $t);
-	# Add bitrate/quality options:
-	if (defined $opts->{q}) {
-	    push @lame, "-V", $opts->{q};
-	} elsif (defined $opts->{b}) {
-	    push @lame, "-b", $opts->{b};
+	# encode .wav file to $opts->{o} format:
+	if ($opts->{o} =~ /\Awav\z/i) {
+	    # already in .wav format
+	} elsif ($opts->{o} =~ /\Amp3\z/i) {
+	    my @lame = ("lame", "--tn", $t);
+	    # Add bitrate/quality options:
+	    if (defined $opts->{q}) {
+		push @lame, "-V", $opts->{q};
+	    } elsif (defined $opts->{b}) {
+		push @lame, "-b", $opts->{b};
+	    } else {
+		push @lame, "-V2";
+	    };
+	    my ($v2tags, $v2only) = (0, 0);
+	    push @lame, "--ty", $dyear04 if defined $dyear04;
+	    push @lame, "--tl", $dtitle_ if defined $dtitle_;
+	    push @lame, "--tt", $ttitle_ if defined $ttitle_;
+	    push @lame, "--tg", $dgenre_ if defined $dgenre_;
+	    push @lame, "--ta", $tperformer_ if defined $tperformer_;
+	    foreach (($dyear04, $dtitle_, $ttitle_, $dgenre_,
+		    $tperformer_)) {
+		$v2only = 1 if length($_) > 30;
+	    };
+	    if (defined $dinfo->{_tracks}->[$t - 1]->{_performer}
+		    and defined $dperformer_) {
+		push @lame, "--tv", "TPE2=$dperformer_";
+		$v2tags = 1;
+	    };
+	    if ($v2only) {
+		push @lame, "--id3v2-only";
+	    } elsif (not $v2tags) {
+		push @lame, "--id3v1-only";
+	    };
+	    push @lame, $track_wav_, $track_out_;
+	    print join(" ", @lame)."\n";
+	    $r = system {$lame[0]} @lame;
+	    die "lame error - $!\n" if $r < 0;
+	    die "lame error $?\n" if $r != 0;
+	} elsif ($opts->{o} =~ /\Aogg\z/i) {
+	    my @oggenc = ("oggenc", "-N", $t);
+	    # Add bitrate/quality options:
+	    if (defined $opts->{q}) {
+		push @oggenc, "-q", $opts->{q};
+	    } elsif (defined $opts->{b}) {
+		push @oggenc, "-b", $opts->{b};
+	    } else {
+		push @oggenc, "-q5";
+	    };
+	    push @oggenc, "-d", $dyear04 if defined $dyear04;
+	    push @oggenc, "-l", $dtitle_ if defined $dtitle_;
+	    push @oggenc, "-t", $ttitle_ if defined $ttitle_;
+	    push @oggenc, "-G", $dgenre_ if defined $dgenre_;
+	    push @oggenc, "-a", $tperformer_ if defined $tperformer_;
+	    push @oggenc, "-c", "albumartist=$dperformer_",
+		if defined $dinfo->{_tracks}->[$t - 1]->{_performer}
+		    and defined $dperformer_;
+	    push @oggenc, "-o", $track_out_, $track_wav_;
+	    print join(" ", @oggenc)."\n";
+	    $r = system {$oggenc[0]} @oggenc;
+	    die "oggenc error - $!\n" if $r < 0;
+	    die "oggenc error $?\n" if $r != 0;
+	} elsif ($opts->{o} =~ /\Aflac\z/i) {
+	    my @flac = ("flac", "-T", "TRACKNUMBER=$t");
+	    # Add compression level:
+	    if (defined $opts->{q}) {
+		push @flac, "--compression-level-$opts->{q}";
+	    } else {
+		push @flac, "--compression-level-6";
+	    };
+	    push @flac, "-T", "DATE=$dyear04" if defined $dyear04;
+	    push @flac, "-T", "ALBUM=$dtitle_" if defined $dtitle_;
+	    push @flac, "-T", "TITLE=$ttitle_" if defined $ttitle_;
+	    push @flac, "-T", "GENRE=$dgenre_" if defined $dgenre_;
+	    push @flac, "-T", "ARTIST=$tperformer_"
+		if defined $tperformer_;
+	    push @flac, "-T", "ALBUMARTIST=$dperformer_",
+		if defined $dinfo->{_tracks}->[$t - 1]->{_performer}
+		    and defined $dperformer_;
+	    push @flac, "-f", "-o", $track_out_, $track_wav_;
+	    print join(" ", @flac)."\n";
+	    $r = system {$flac[0]} @flac;
+	    die "flac error - $!\n" if $r < 0;
+	    die "flac error $?\n" if $r != 0;
 	} else {
-	    push @lame, "-V2";
+	    die "Unsupported output format - ".str($opts->{o})."\n";
 	};
-	my ($v2tags, $v2only) = (0, 0);
-	push @lame, "--ty", $dyear04 if defined $dyear04;
-	push @lame, "--tl", $dtitle_ if defined $dtitle_;
-	push @lame, "--tt", $ttitle_ if defined $ttitle_;
-	push @lame, "--tg", $dgenre_ if defined $dgenre_;
-	push @lame, "--ta", $tperformer_ if defined $tperformer_;
-	foreach (($dyear04, $dtitle_, $ttitle_, $dgenre_,
-		$tperformer_)) {
-	    $v2only = 1 if length($_) > 30;
-	};
-	if (defined $dinfo->{_tracks}->[$t - 1]->{_performer}
-		and defined $dperformer_) {
-	    push @lame, "--tv", "TPE2=$dperformer_";
-	    $v2tags = 1;
-	};
-	if ($v2only) {
-	    push @lame, "--id3v2-only";
-	} elsif (not $v2tags) {
-	    push @lame, "--id3v1-only";
-	};
-	push @lame, $track_wav_, $track_mp3_;
-	print join(" ", @lame)."\n";
-	$r = system {$lame[0]} @lame;
-	die "lame error - $!\n" if $r < 0;
-	die "lame error $?\n" if $r != 0;
-	unlink $track_wav_ or die "cannot unlink $track_wav_ - $!\n";
+	unlink $track_wav_ or die "cannot unlink $track_wav_ - $!\n"
+	    if $opts->{o} !~ /\Awav\z/i;
     };
 };
 
@@ -1005,7 +1059,6 @@ sub lmatch($$) {
     return $i;
 };
 
-
 sub usage($) {
     print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
     print "  where opts are:\n";
@@ -1014,19 +1067,20 @@ sub usage($) {
     print "    -d    don't query CDDB server\n";
     print "    -i F  set F as cdimage filename\n";
     print "    -n N  select Nth cue/CDDB disc info & don't edit\n";
+    print "    -o F  F: mp3, ogg or flac\n";
     print "    -q L  encode mp3's with VBR at quality level L\n";
     print "    -v    report $0's version\n";
     exit $_[0];
 };
 
 sub version($) {
-    print "$0 version 2.1, MIT license, copyright (c) 2016-2017 xrgtn\n";
+    print "$0 version 2.2, MIT license, copyright (c) 2016-2017 xrgtn\n";
     exit $_[0];
 };
 
 # Parse options:
 my $opts = {};
-my $opts_ok = getopts("b:cdi:n:q:v", $opts);
+my $opts_ok = getopts("b:cdi:n:o:q:v", $opts);
 foreach my $o (qw(b q)) {
     die "Invalid \"-$o $opts->{$o}\" option value\n"
 	if defined $opts->{$o} and $opts->{$o} !~ /\A\d+\z/;
@@ -1035,16 +1089,28 @@ foreach my $o (qw(n)) {
     die "Invalid \"-$o $opts->{$o}\" option value\n"
 	if defined $opts->{$o} and $opts->{$o} !~ /\A-?\d+\z/;
 };
+$opts->{o} = (defined $opts->{o}) ?
+    decode($loc_charenc, $opts->{o}) : "mp3";
 usage(1) if not $opts_ok;
 version(1) if defined $opts->{v};
 usage(1) if not @ARGV;
 
-
 no warnings "exec";
 die "\"ffmpeg\" not found on this system\n"
     if system("ffmpeg -version >/dev/null 2>&1") != 0;
-die "\"lame\" not found on this system\n"
-    if system("lame --version >/dev/null 2>&1") != 0;
+if ($opts->{o} =~ /\Amp3\z/i) {
+    die "\"lame\" not found on this system\n"
+	if system("lame --version >/dev/null 2>&1") != 0;
+} elsif ($opts->{o} =~ /\Aogg\z/i) {
+    die "\"oggenc\" not found on this system\n"
+	if system("oggenc --version >/dev/null 2>&1") != 0;
+} elsif ($opts->{o} =~ /\Aflac\z/i) {
+    die "\"flac\" not found on this system\n"
+	if system("flac --version >/dev/null 2>&1") != 0;
+} elsif ($opts->{o} =~ /\Awav\z/i) {
+} else {
+    die "Unsupported output format - ".str($opts->{o})."\n";
+};
 use warnings;
 
 foreach my $cue_fname_ (@ARGV) {
