@@ -98,10 +98,10 @@ By default, split-cue runs "lame" with "-V2" option, which produces VBR
 200kbits).
 * "-b R" option causes split-cue to produce CBR (Constant Bit Rate) mp3
   files with bitrate of Rkbits.
-* "-q L" option produces VBR files at quality level L (0..9 with level
-  0 being the highest). "-q" has precedence over "-b".
+* "-q L" option produces VBR files at quality level L. L must be in 0..9
+  range where 0 is the highest. "-q" has precedence over "-b".
 
-With "oggenc" "-b N" and "-q L" options are processed similarly, but
+With "oggenc" "-b R" and "-q L" options are processed similarly, but
 quality level may be frational like 4.5 and must fall in -1..10 range
 where level 10 is the highest one (level 5 is assumed by default,
 reults in approximately 190kbits rate).  With "flac" the "-q" option is
