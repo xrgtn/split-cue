@@ -95,17 +95,20 @@ the track will be named just "_nn_.mp3".
 
 By default, split-cue runs "lame" with "-V2" option, which produces VBR
 (Variable Bit Rate) mp3 file with quality level 2 (approximately
-190kbits).
-* "-b N" option causes split-cue to produce CBR (Constant Bit Rate) mp3
-  files with bitrate of Nkbits.
-* "-q L" option produces VBR files at quality level L (0-9). "-q" has
-  precedence over "-b".
+200kbits).
+* "-b R" option causes split-cue to produce CBR (Constant Bit Rate) mp3
+  files with bitrate of Rkbits.
+* "-q L" option produces VBR files at quality level L (0..9 with level
+  0 being the highest). "-q" has precedence over "-b".
 
-With "oggenc" default quality level is 5, but "-b N" and "-q L" options
-are permitted and processed in the same way as for "lame". With "flac"
-the "-q" option is translated to --compression-level which is set to 6
-by default, while "-b" is completely ignored. When .wav output is
-requested, both "-q" and "-b" are ignored.
+With "oggenc" "-b N" and "-q L" options are processed similarly, but
+quality level may be frational like 4.5 and must fall in -1..10 range
+where level 10 is the highest one (level 5 is assumed by default,
+reults in approximately 190kbits rate).  With "flac" the "-q" option is
+translated to --compression-level-0..8, 0 being the fastest, 8 -- the
+highest and level 6 used by default. The "-b" option is completely
+ignored when producing .flac's. With .wav output both "-q" and "-b" are
+ignored.
 
 ### Metadata tags
 
