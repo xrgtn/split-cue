@@ -1015,12 +1015,18 @@ sub usage($) {
     print "    -i F  set F as cdimage filename\n";
     print "    -n N  select Nth cue/CDDB disc info & don't edit\n";
     print "    -q L  encode mp3's with VBR at quality level L\n";
+    print "    -v    report $0's version\n";
+    exit $_[0];
+};
+
+sub version($) {
+    print "$0 version 2.1, MIT license, copyright (c) 2016-2017 xrgtn\n";
     exit $_[0];
 };
 
 # Parse options:
 my $opts = {};
-my $opts_ok = getopts("b:cdi:n:q:", $opts);
+my $opts_ok = getopts("b:cdi:n:q:v", $opts);
 foreach my $o (qw(b q)) {
     die "Invalid \"-$o $opts->{$o}\" option value\n"
 	if defined $opts->{$o} and $opts->{$o} !~ /\A\d+\z/;
@@ -1029,7 +1035,10 @@ foreach my $o (qw(n)) {
     die "Invalid \"-$o $opts->{$o}\" option value\n"
 	if defined $opts->{$o} and $opts->{$o} !~ /\A-?\d+\z/;
 };
-usage(1) if not @ARGV or not $opts_ok;
+usage(1) if not $opts_ok;
+version(1) if defined $opts->{v};
+usage(1) if not @ARGV;
+
 
 no warnings "exec";
 die "\"ffmpeg\" not found on this system\n"
