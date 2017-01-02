@@ -1062,13 +1062,13 @@ sub lmatch($$) {
 sub usage($) {
     print "USAGE: $0 [opts] disc1.cue [disc2.cue ...]\n";
     print "  where opts are:\n";
-    print "    -b N  encode mp3's with constant bitrate of Nkbits\n";
+    print "    -b R  encode at bitrate Rkbits\n";
     print "    -c    don't read ~/.cddb/<genre>/<discid> cache\n";
     print "    -d    don't query CDDB server\n";
     print "    -i F  set F as cdimage filename\n";
     print "    -n N  select Nth cue/CDDB disc info & don't edit\n";
     print "    -o F  F: mp3, ogg, flac or wav\n";
-    print "    -q L  encode mp3's with VBR at quality level L\n";
+    print "    -q L  encode at quality level L\n";
     print "    -v    report $0's version\n";
     exit $_[0];
 };
