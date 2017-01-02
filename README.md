@@ -1,25 +1,27 @@
 # split-cue
 
-Split audio CD image + cuesheet/toc to .mp3 tracks.
+Split audio CD image + cuesheet/toc to .mp3/.ogg/.flac/.wav tracks.
 
 split-cue reads track descriptions from a .cue/.toc file and looks for
 matching discs in CDDB database. It prompts user to select one disc and
 whether he/she wants to edit disc/tracks descriptions.
 
 After the prompting split-cue splits CD image to individual tracks and
-encodes them to .mp3 files.
+encodes them to .mp3, .ogg or .flac files.
 
 ID3 tags are created based upon the disc/tracks descriptions taken
 from the source, selected by user.
 
 ### Dependencies and data formats
 
-split-cue needs perl5, ffmpeg, lame (and optionally perl CDDB library)
-to operate. Basically it can read CD images in any format that ffmpeg
-can understand, this means .ape, .flac and .wav at the minimum. It can
-also read .clone files produced by readom/readcd utils from cdrkit.
-Currently it generates .mp3 files on output, but adding support for
-.ogg, .flac, .wav and others is on my TODO list.
+split-cue needs "perl5", "ffmpeg", and optionally perl CDDB library,
+"lame", "oggenc" or "flac" audio encoder to operate. Basically it can
+read CD images in any format that ffmpeg can understand, this means
+.ape, .flac and .wav at the minimum. It can also read .clone files
+produced by readom/readcd utils from cdrkit.
+
+By default split-cue generates .mp3 files on output, but it can be
+ordered to produce .ogg, .flac or .wav by "-o _format_" option.
 
 ### CDDB operation
 
@@ -99,8 +101,22 @@ By default, split-cue runs "lame" with "-V2" option, which produces VBR
 * "-q L" option produces VBR files at quality level L (0-9). "-q" has
   precedence over "-b".
 
-Disc year, artist, album, genre, track number, title and performer data
-are put into ID3v1 tag or ID3v1+ID3v2. The latter method is only used
-when separate track performer is specified in track info (typically
-on tribute, cover or Various Artists albums), and it uses --TPE2 tag to
-store album performer separately from track one.
+With "oggenc" default quality level is 5, but "-b N" and "-q L" options
+are permitted and processed in the same way as for "lame". With "flac"
+the "-q" option is translated to --compression-level which is set to 6
+by default, while "-b" is completely ignored. When .wav output is
+requested, both "-q" and "-b" are ignored.
+
+### Metadata tags
+
+For .mp files disc year, artist, album, genre, track number, title and
+performer data are put into ID3v1 tag or ID3v1+ID3v2. The latter method
+is only used when separate track performer is specified in track info
+(typically on tribute, cover or Various Artists albums), and it uses
+--TPE2 tag to store album performer separately from track one.
+
+For .ogg and .flac files their respective standard tags are used. When
+there are separate track and disc performer, the latter is put into
+ALBUMARTIST tag.
+
+For .wav files no metadata tags are created.
