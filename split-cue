@@ -1012,6 +1012,7 @@ sub usage($) {
     print "    -b N  encode mp3's with constant bitrate of Nkbits\n";
     print "    -c    don't read ~/.cddb/<genre>/<discid> cache\n";
     print "    -d    don't query CDDB server\n";
+    print "    -i F  set F as cdimage filename\n";
     print "    -n N  select Nth cue/CDDB disc info & don't edit\n";
     print "    -q L  encode mp3's with VBR at quality level L\n";
     exit $_[0];
@@ -1019,7 +1020,7 @@ sub usage($) {
 
 # Parse options:
 my $opts = {};
-my $opts_ok = getopts("b:cdn:q:", $opts);
+my $opts_ok = getopts("b:cdi:n:q:", $opts);
 foreach my $o (qw(b q)) {
     die "Invalid \"-$o $opts->{$o}\" option value\n"
 	if defined $opts->{$o} and $opts->{$o} !~ /\A\d+\z/;
@@ -1041,18 +1042,23 @@ foreach my $cue_fname_ (@ARGV) {
     my $cue_fname = decode($loc_charenc, $cue_fname_);
     die "$cue_fname_ doesn't exist\n" if not -e $cue_fname;
     my $cdimage_fname;
-    foreach my $x (sort {
-	    my $r = lmatch($b, $cue_fname)
-		<=> lmatch($a, $cue_fname);
-	    return $r ? $r : $b cmp $a
-	} adjacent_files $cue_fname) {
-	if ($x =~ /\.(ape|flac|wav|clone)\z/i) {
-	    $cdimage_fname = $x;
-	    last;
+    if (defined $opts->{i}) {
+	$cdimage_fname = decode($loc_charenc, $opts->{i});
+	die "$opts->{i} doesn't exist\n" if not -e $cdimage_fname;
+    } else {
+	foreach my $x (sort {
+		my $r = lmatch($b, $cue_fname)
+		    <=> lmatch($a, $cue_fname);
+		return $r ? $r : $b cmp $a
+	    } adjacent_files $cue_fname) {
+	    if ($x =~ /\.(ape|flac|wav|clone)\z/i) {
+		$cdimage_fname = $x;
+		last;
+	    };
 	};
+	die "No .ape/.flac/.wav/.clone file found for $cue_fname_\n"
+	    if not defined $cdimage_fname;
     };
-    die "No .ape/.flac/.wav/.clone file found for $cue_fname_\n"
-	if not defined $cdimage_fname;
     (my $cue_bname = $cue_fname) =~ s!\A.*/!!;
     (my $cdimage_bname = $cdimage_fname) =~ s!\A.*/!!;
     printf "Splitting  %s  +  %s\n", str($cue_bname),
