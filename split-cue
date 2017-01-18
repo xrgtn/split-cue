@@ -593,13 +593,26 @@ sub split_dtitle($) {
 
 sub print_disc_info($$;$$) {
     my ($disc_no, $dinfo, $print_tracks, $dbgenre) = @_;
-    printf "%3i. %s: %s, %s - %s - %s\n",
+    my $cached = "";
+    my $homedir = (defined $ENV{HOME} and $ENV{HOME} ne "") ?
+	$ENV{HOME} : $ENV{LOGDIR};
+    if (defined $dinfo->{discid} and defined $dinfo->{genre}
+	    and $dinfo->{genre} =~ /\A[a-z_-]+\z/
+	    and defined $homedir and $homedir ne "") {
+	foreach my $discid (split /\s*,\s*/, $dinfo->{discid}) {
+	    my $cache_fname =
+		"$homedir/.cddb/$dinfo->{genre}/$discid";
+	    $cached = " (cached)" if -e $cache_fname;
+	};
+    };
+    printf "%3i. %s: %s, %s - %s - %s%s\n",
 	$disc_no, $dinfo->{discid},
 	str(defined($dbgenre) ? $dbgenre : $dinfo->{dgenre}),
 	(defined($dinfo->{dyear}) ? sprintf("%04i", $dinfo->{dyear})
 	    : "????"),
 	str($dinfo->{_performer}),
-	str($dinfo->{_title});
+	str($dinfo->{_title}),
+	$cached;
     if ($print_tracks and defined $dinfo->{_tracks}) {
 	for (my $i = 0; $i < scalar(@{$dinfo->{_tracks}}); $i++) {
 	    printf "    %02i. %s - %s\n", $i + 1, str(
