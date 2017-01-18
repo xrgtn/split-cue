@@ -1087,7 +1087,7 @@ sub usage($) {
 };
 
 sub version($) {
-    print "$0 version 2.2, MIT license, copyright (c) 2016-2017 xrgtn\n";
+    print "$0 version 2.3, MIT license, copyright (c) 2016-2017 xrgtn\n";
     exit $_[0];
 };
 
